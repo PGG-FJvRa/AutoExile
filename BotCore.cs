@@ -830,6 +830,41 @@ namespace AutoExile
                 Graphics.DrawText(recText, new Vector2(100, 116), SharpDX.Color.Red);
             }
 
+            // Debug (while PAUSED): list nearby friendly, living, non-hostile entities so we can
+            // confirm which minions + the mercenary the bot can see/target for Flame Link linking.
+            // Stand next to your minions in the hideout and pause (Insert) to read this.
+            if (!running && GameController?.Player != null)
+            {
+                var pPos = GameController.Player.GridPosNum;
+                float dy = 160f;
+                Graphics.DrawText("-- Friendly entities near you (paused) --", new Vector2(100, dy), SharpDX.Color.Cyan);
+                dy += 18f;
+                var frows = new List<(float dist, string line)>();
+                foreach (var e in GameController.EntityListWrapper.OnlyValidEntities)
+                {
+                    if (e == null || e.Id == GameController.Player.Id || e.IsHostile) continue;
+                    var life = e.GetComponent<ExileCore.PoEMemory.Components.Life>();
+                    if (life == null || life.CurHP <= 0) continue; // living allies only (minions, merc, AG, NPCs)
+                    var d = Vector2.Distance(e.GridPosNum, pPos);
+                    if (d > 70f) continue;
+                    var nm = string.IsNullOrEmpty(e.RenderName) ? "(no name)" : e.RenderName;
+                    var meta = e.Metadata ?? "";
+                    var slash = meta.LastIndexOf('/');
+                    var metaTail = slash > 0 && slash < meta.Length - 1 ? meta.Substring(slash + 1) : meta;
+                    frows.Add((d, $"{e.Type} | {nm} [{metaTail}] d={d:F0}"));
+                }
+                frows.Sort((a, b) => a.dist.CompareTo(b.dist));
+                int shown = 0;
+                foreach (var r in frows)
+                {
+                    if (shown++ >= 16) break;
+                    Graphics.DrawText(r.line, new Vector2(100, dy), SharpDX.Color.White);
+                    dy += 16f;
+                }
+                if (frows.Count == 0)
+                    Graphics.DrawText("(none within 70 - stand next to your minions)", new Vector2(100, dy), SharpDX.Color.Gray);
+            }
+
             // Loot tracker overlay (top-right area)
             var winWidth = GameController.Window.GetWindowRectangle().Width;
             _lootTracker.Render(Graphics, new Vector2(winWidth - 250, 80));
