@@ -208,6 +208,9 @@ namespace AutoExile
             [Menu("Fight Range", "Preferred grid distance to fight monsters from. Melee/Ranged positioning target. Aggressive ignores this.")]
             public RangeNode<int> FightRange { get; set; } = new RangeNode<int>(40, 5, 80);
 
+            [Menu("Boss Keep-Distance", "Grid distance to keep from Kosis & Omniphobia (Simulacrum bosses). The bot backs away to this range instead of standing in their melee, and won't re-approach. 0 = disabled.")]
+            public RangeNode<int> BossKeepDistance { get; set; } = new RangeNode<int>(0, 0, 120);
+
             [Menu("Combat Range", "Grid distance threshold for 'in combat'. Monsters within this trigger positioning and skills.")]
             public RangeNode<int> CombatRange { get; set; } = new RangeNode<int>(80, 20, 200);
 

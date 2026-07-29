@@ -343,6 +343,7 @@ namespace AutoExile.Systems
             LastSkillAction = "";
             _walkableMonsterWeighted.Clear();
             _allMonsterWeighted.Clear();
+            _keepDistanceThreats.Clear();
             BestTargetHasLOS = false;
             _skillBar.Clear();
             _primaryMovementEntry = null;
@@ -379,6 +380,9 @@ namespace AutoExile.Systems
 
         /// <summary>Positions of all nearby monsters within chase radius (reused buffer).</summary>
         private readonly List<Vector2> _nearbyMonsterPositions = new();
+
+        /// <summary>Positions of alive keep-distance bosses (Kosis/Omniphobia) to kite away from (reused buffer).</summary>
+        private readonly List<Vector2> _keepDistanceThreats = new();
 
         /// <summary>Only monsters reachable via straight-line walk (pf LOS), with rarity weight for density.</summary>
         private readonly List<(Vector2 pos, float weight)> _walkableMonsterWeighted = new();
@@ -434,6 +438,7 @@ namespace AutoExile.Systems
             _nearbyMonsterPositions.Clear();
             _walkableMonsterWeighted.Clear();
             _allMonsterWeighted.Clear();
+            _keepDistanceThreats.Clear();
 
             // Use EntityCache.Monsters when available (pre-filtered, no type check needed).
             // Falls back to OnlyValidEntities if cache not wired up.
@@ -526,6 +531,10 @@ namespace AutoExile.Systems
                 // nothing there (e.g. the bridge end near the stash on Oriath's Delusion). Skip them.
                 var targetLife = entity.GetComponent<ExileCore.PoEMemory.Components.Life>();
                 if (targetLife == null || targetLife.CurHP <= 0) continue;
+
+                // Track designated keep-distance bosses (Kosis/Omniphobia) for kiting positioning.
+                if (IsKeepDistanceBoss(entity))
+                    _keepDistanceThreats.Add(entity.GridPosNum);
 
                 cachedCount++;
 
@@ -1522,6 +1531,56 @@ namespace AutoExile.Systems
 
             if (BestTarget == null || NearbyMonsterCount == 0) return;
 
+            // ── Keep distance from designated bosses (Kosis / Omniphobia) ──
+            // Squishy builds die standing in their melee. When one is inside the keep-distance
+            // ring, kite directly away — repulsion summed over all such bosses handles both being
+            // alive at once — to a walkable spot that still sees the boss so skills/minions keep
+            // hitting. Beyond the ring, hold position and refuse to re-approach into melee.
+            int bossKeepDist = settings.BossKeepDistance.Value;
+            if (bossKeepDist > 0 && _keepDistanceThreats.Count > 0)
+            {
+                var pGrid = gc.Player.GridPosNum;
+                Vector2 repulse = Vector2.Zero;
+                float nearestThreat = float.MaxValue;
+                Vector2 nearestThreatPos = _keepDistanceThreats[0];
+                foreach (var t in _keepDistanceThreats)
+                {
+                    float d = Vector2.Distance(pGrid, t);
+                    if (d < nearestThreat) { nearestThreat = d; nearestThreatPos = t; }
+                    if (d < bossKeepDist)
+                        repulse += SafeNormalize(pGrid - t) * (bossKeepDist - d);
+                }
+
+                if (nearestThreat < bossKeepDist)
+                {
+                    var fleeDir = repulse != Vector2.Zero
+                        ? SafeNormalize(repulse)
+                        : SafeNormalize(pGrid - nearestThreatPos);
+                    var fleeTarget = pGrid + fleeDir * (bossKeepDist - nearestThreat + 10f);
+                    var pfBoss = gc.IngameState.Data.RawFramePathfindingData;
+                    // Prefer a walkable spot along the flee vector that still sees the boss.
+                    var safePos = ctx.Navigation.FindWalkableWithLOS(gc, fleeTarget, nearestThreatPos, 25)
+                               ?? ctx.Navigation.FindWalkableWithLOS(gc, pGrid, nearestThreatPos, 25);
+                    if (safePos.HasValue &&
+                        (pfBoss == null || Pathfinding.HasLineOfSight(pfBoss, pGrid, safePos.Value)))
+                    {
+                        WantsToMove = true;
+                        MoveTargetGrid = safePos.Value;
+                        MoveTarget = ToWorld(safePos.Value);
+                        ExecuteMove(gc, safePos.Value);
+                        LastAction = $"keeping distance from boss ({nearestThreat:F0}<{bossKeepDist})";
+                        return;
+                    }
+                    // No safe walkable spot found — fall through to normal positioning as a last resort.
+                }
+                else
+                {
+                    // At/beyond safe distance — hold here and let skills fire; don't re-enter melee.
+                    LastAction = $"holding at boss range ({nearestThreat:F0}>={bossKeepDist})";
+                    return;
+                }
+            }
+
             // If no walkable monsters exist, handle gap-only combat
             if (_walkableMonsterWeighted.Count == 0)
             {
@@ -1826,6 +1885,19 @@ namespace AutoExile.Systems
                 return true;
 
             return false;
+        }
+
+        /// <summary>
+        /// Bosses the bot should kite away from instead of standing in melee (squishy builds).
+        /// Matched by display name so it stays specific to Kosis &amp; Omniphobia.
+        /// </summary>
+        private static bool IsKeepDistanceBoss(Entity entity)
+        {
+            if (entity.Rarity != MonsterRarity.Unique) return false;
+            var name = entity.RenderName;
+            if (string.IsNullOrEmpty(name)) return false;
+            return name.Contains("Kosis", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("Omniphobia", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsInsideMonolith(Entity entity)
