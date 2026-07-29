@@ -912,6 +912,31 @@ namespace AutoExile
                         Graphics.DrawText(cl, new Vector2(ex, ey), SharpDX.Color.White);
                         ey += 14f;
                     }
+
+                    // Dump the open currency picker's options (base name + all element texts) so we
+                    // can find where the owned-quantity lives, for the sell flow.
+                    try
+                    {
+                        dynamic picker = cxPanel.CurrencyPicker;
+                        if (picker != null && picker.IsVisible)
+                        {
+                            float px = 20f, py = 250f;
+                            Graphics.DrawText("-- Picker options (base | element texts) --", new Vector2(px, py), SharpDX.Color.Orange);
+                            py += 16f;
+                            int oi = 0;
+                            foreach (var opt in picker.Options)
+                            {
+                                if (oi++ >= 18) break;
+                                string bn = "?";
+                                try { bn = (string)opt.ItemType.BaseName; } catch { }
+                                var otxt = new List<string>();
+                                try { DumpElementText((ExileCore.PoEMemory.Element)opt, "", otxt, 0); } catch { }
+                                Graphics.DrawText($"[{bn}] {string.Join(" | ", otxt)}", new Vector2(px, py), SharpDX.Color.Yellow);
+                                py += 15f;
+                            }
+                        }
+                    }
+                    catch { }
                 }
             }
             catch { }
