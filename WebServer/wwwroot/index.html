@@ -1407,6 +1407,7 @@ function renderAllSettings() {
     ['build.guardHpThreshold'],['build.guardEsThreshold'],['build.vaalMinMonsters'],['build.summonExpectedCount']]);
   build.appendChild(buildEnemyBlacklist());
   build.appendChild(buildTagListEditor('build.sellExclusions', 'Sell Exclusions (never auto-sell)', 'e.g. Divine Orb'));
+  addSection(build, 'Sell Surplus (currency exchange)', [['build.sellSurplusNow','toggle ON in hideout to run once'],['build.sellMaxOrdersPerRun']]);
   build.appendChild(renderSkillsSection());
   addSection(build, 'Flasks', [['build.flasksEnabled'],['build.lifeFlaskSlot','0 = disabled'],['build.lifeFlaskHpThreshold'],
     ['build.manaFlaskSlot','0 = disabled'],['build.manaFlaskManaThreshold'],['build.utilityFlaskIntervalMs']]);

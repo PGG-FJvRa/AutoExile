@@ -205,6 +205,12 @@ namespace AutoExile
             [Menu("Sell Exclusions", "Comma-separated item base names the currency-exchange seller must NEVER auto-sell.")]
             public TextNode SellExclusions { get; set; } = new TextNode("Divine Orb, Stacked Deck, Scroll of Wisdom, Portal Scroll, Chaos Orb, Mirror of Kalandra, Simulacrum, Simulacrum Splinter");
 
+            [Menu("Sell Surplus Now", "Trigger a one-time currency-exchange sell run: walk to Faustus and sell surplus currency (>threshold, minus exclusions) for Chaos. Run this in your hideout. Auto-resets after starting.")]
+            public ToggleNode SellSurplusNow { get; set; } = new ToggleNode(false);
+
+            [Menu("Sell Max Orders / Run", "Safety cap on how many sell orders a single run places.")]
+            public RangeNode<int> SellMaxOrdersPerRun { get; set; } = new RangeNode<int>(3, 1, 10);
+
             [Menu("Default Positioning", "How to position relative to monsters. Modes can override.")]
             public ListNode DefaultPositioning { get; set; } = new ListNode();
 

@@ -38,6 +38,7 @@ namespace AutoExile
         private StashSystem _stash = new();
         private StashIndexer _stashIndex = new();
         private FaustusSystem _faustus = new();
+        private SellExchangeSystem _sellExchange = new();
 
         // Gem level-up
         private DateTime _lastGemLevelAt = DateTime.MinValue;
@@ -776,6 +777,23 @@ namespace AutoExile
                 _followerMode.EnableCombat = Settings.Follower.EnableCombat.Value;
                 _followerMode.EnableLoot = Settings.Follower.EnableLoot.Value;
                 _followerMode.LootNearLeaderOnly = Settings.Follower.LootNearLeaderOnly.Value;
+            }
+
+            // Currency-exchange sell run takes priority over the farm mode while active.
+            if (Settings.Build.SellSurplusNow.Value && !_sellExchange.IsBusy)
+            {
+                Settings.Build.SellSurplusNow.Value = false; // consume the one-shot trigger
+                var sellExcl = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var e in (Settings.Build.SellExclusions.Value ?? "")
+                         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    sellExcl.Add(e);
+                _sellExchange.Start(Settings.Build.SellMaxOrdersPerRun.Value, SellThresholdChaos, sellExcl);
+                LogMessage("[AutoExile] Sell surplus run started");
+            }
+            if (_sellExchange.IsBusy)
+            {
+                _sellExchange.Tick(_ctx);
+                return base.Tick();
             }
 
             // Let the active mode decide what to do (may set up navigation paths)
