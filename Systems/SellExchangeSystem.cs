@@ -183,6 +183,12 @@ namespace AutoExile.Systems
             }
             if (picker.IsPickingWantedCurrency) { Status = "Sell: wrong picker open"; return; }
 
+            // Wait for the option list to actually populate before concluding anything —
+            // reading on the first visible frame yields 0 and would wrongly report "no candidates".
+            int optCount = 0;
+            try { foreach (var _ in picker.Options) optCount++; } catch { }
+            if (optCount == 0) { Status = "Sell: waiting for I Have options to load…"; return; }
+
             // Build the queue from the picker options.
             var rows = new List<(string name, double total)>();
             try
@@ -212,12 +218,12 @@ namespace AutoExile.Systems
                 added++;
             }
 
-            if (_queue.Count == 0) { Status = "Sell: no candidates over threshold"; SetState(SellState.Idle); return; }
+            if (_queue.Count == 0) { Status = $"Sell: no candidates (opts={optCount})"; SetState(SellState.Idle); return; }
 
             _current = _queue.Dequeue();
             _havePicked = false;
             _wantPicked = false;
-            Status = $"Sell: queued {added} orders; first = {_current}";
+            Status = $"Sell: queued {added}/{optCount}; first = {_current}";
             SetState(SellState.PickingHave);
         }
 
