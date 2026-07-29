@@ -913,25 +913,19 @@ namespace AutoExile
                         ey += 14f;
                     }
 
-                    // Dump the open currency picker's options (base name + all element texts) so we
-                    // can find where the owned-quantity lives, for the sell flow.
+                    // Compute + show the real sell candidates from the open "I Have" picker (dry run).
                     try
                     {
                         dynamic picker = cxPanel.CurrencyPicker;
                         if (picker != null && picker.IsVisible)
                         {
+                            BuildSellCandidatesFromPicker(picker);
                             float px = 20f, py = 250f;
-                            Graphics.DrawText("-- Picker options (base | element texts) --", new Vector2(px, py), SharpDX.Color.Orange);
-                            py += 16f;
-                            int oi = 0;
-                            foreach (var opt in picker.Options)
+                            int k = 0;
+                            foreach (var line in _sellCandidateLines)
                             {
-                                if (oi++ >= 18) break;
-                                string bn = "?";
-                                try { bn = (string)opt.ItemType.BaseName; } catch { }
-                                var otxt = new List<string>();
-                                try { DumpElementText((ExileCore.PoEMemory.Element)opt, "", otxt, 0); } catch { }
-                                Graphics.DrawText($"[{bn}] {string.Join(" | ", otxt)}", new Vector2(px, py), SharpDX.Color.Yellow);
+                                if (k++ >= 32) break;
+                                Graphics.DrawText(line, new Vector2(px, py), k == 1 ? SharpDX.Color.Gold : SharpDX.Color.Yellow);
                                 py += 15f;
                             }
                         }
@@ -1971,6 +1965,54 @@ namespace AutoExile
                 if (pr.MaxChaosValue > 0.0) return pr.MaxChaosValue;
             }
             return 0.0;
+        }
+
+        // Build the sell-candidate list from the exchange's "I Have" picker: each option's owned
+        // quantity (element child 1/0) x ninja unit chaos, kept when the whole-stack value >= the
+        // threshold and the base isn't excluded. Read-only (dry run).
+        private void BuildSellCandidatesFromPicker(dynamic picker)
+        {
+            _sellCandidateLines.Clear();
+            var rows = new List<(string name, int qty, double unit, double total)>();
+            try
+            {
+                foreach (var opt in picker.Options)
+                {
+                    string name = null;
+                    try { name = (string)opt.ItemType.BaseName; } catch { }
+                    if (string.IsNullOrEmpty(name) || _sellExclusions.Contains(name)) continue;
+                    int qty = ReadPickerQty((ExileCore.PoEMemory.Element)opt);
+                    if (qty <= 0) continue;
+                    double unit = UnitChaos(name);
+                    if (unit <= 0.0) continue;
+                    double total = qty * unit;
+                    if (total >= SellThresholdChaos)
+                        rows.Add((name, qty, unit, total));
+                }
+            }
+            catch { }
+
+            rows.Sort((a, b) => b.total.CompareTo(a.total));
+            double grand = 0; foreach (var r in rows) grand += r.total;
+            _sellCandidateLines.Add($"WOULD SELL {rows.Count} stacks  (~{grand:F0}c)  [dry run]");
+            foreach (var r in rows)
+                _sellCandidateLines.Add($"{r.name}  x{r.qty}  @{r.unit:F2}c  = {r.total:F0}c");
+        }
+
+        private static int ReadPickerQty(ExileCore.PoEMemory.Element opt)
+        {
+            try { return ParseAbbrevInt(opt.GetChildAtIndex(1)?.GetChildAtIndex(0)?.Text); }
+            catch { return 0; }
+        }
+
+        private static int ParseAbbrevInt(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return 0;
+            s = s.Trim().Replace(",", "");
+            double mult = 1;
+            if (s.EndsWith("K", StringComparison.OrdinalIgnoreCase)) { mult = 1000; s = s[..^1]; }
+            else if (s.EndsWith("M", StringComparison.OrdinalIgnoreCase)) { mult = 1_000_000; s = s[..^1]; }
+            return double.TryParse(s, out var v) ? (int)(v * mult) : 0;
         }
 
         private bool HandleInterrupts()
