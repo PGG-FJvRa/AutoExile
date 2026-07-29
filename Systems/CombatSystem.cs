@@ -64,6 +64,9 @@ namespace AutoExile.Systems
         /// <summary>Nearest corpse position for offering skills (grid coords).</summary>
         public Vector2? NearestCorpse { get; private set; }
 
+        /// <summary>Nearest own minion to link (Flame Link etc.), grid target. Null if none in range.</summary>
+        public Entity? MinionToLink { get; private set; }
+
 
         /// <summary>Player HP percentage (0-1) last tick.</summary>
         public float HpPercent { get; private set; }
@@ -334,6 +337,7 @@ namespace AutoExile.Systems
             PackCenter = Vector2.Zero;
             DenseClusterCenter = Vector2.Zero;
             NearestCorpse = null;
+            MinionToLink = null;
             WantsToMove = false;
             LastAction = "";
             LastSkillAction = "";
@@ -516,6 +520,13 @@ namespace AutoExile.Systems
                 // Skip monsters blacklisted as unreachable (attacks don't connect)
                 if (_unreachableMonsters.Contains(entity.Id)) continue;
 
+                // Phantom/stale guard: a real combatant exposes a Life component with positive HP.
+                // Decoration or stale-memory entities (often null RenderName, shown as "?") can
+                // register as hostile+alive and freeze the bot into "fighting 1 monster" with
+                // nothing there (e.g. the bridge end near the stash on Oriath's Delusion). Skip them.
+                var targetLife = entity.GetComponent<ExileCore.PoEMemory.Components.Life>();
+                if (targetLife == null || targetLife.CurHP <= 0) continue;
+
                 cachedCount++;
 
                 // Rarity weight used for both targeting and density
@@ -600,6 +611,30 @@ namespace AutoExile.Systems
                     bestTarget = entity;
                 }
             }
+
+            // ── Flame Link: nearest OWN minion, optionally skipping already-linked ones ──
+            // Your minions are non-hostile Monster entities. When a Minion-role skill has
+            // OnlyWhenBuffMissing + a buff name set, skip minions that already carry the buff so
+            // successive casts spread across all of them and go quiet once every minion is linked.
+            Entity? minionToLink = null;
+            {
+                var linkEntry = _skillBar.FirstOrDefault(e => e.Role == SkillRole.Minion);
+                if (linkEntry != null)
+                {
+                    string linkBuff = linkEntry.BuffDebuffName ?? "";
+                    bool gateByBuff = linkEntry.OnlyWhenBuffMissing && linkBuff.Length > 0;
+                    float nearestMinionDist = float.MaxValue;
+                    foreach (var m in monsters)
+                    {
+                        if (m.IsHostile || !m.IsAlive) continue;
+                        if (gateByBuff && EntityHasBuff(m, linkBuff)) continue;
+                        var md = Vector2.Distance(m.GridPosNum, playerGrid);
+                        if (md > combatRange) continue;
+                        if (md < nearestMinionDist) { nearestMinionDist = md; minionToLink = m; }
+                    }
+                }
+            }
+            MinionToLink = minionToLink;
 
             NearbyMonsterCount = combatCount;
             WeightedDensity = weightedDensity;
@@ -1105,6 +1140,7 @@ namespace AutoExile.Systems
                 // Targeting prerequisite: Enemy needs a target, Corpse needs a corpse
                 if (entry.Role == SkillRole.Enemy && (BestTarget == null || !InCombat)) continue;
                 if (entry.Role == SkillRole.Corpse && !NearestCorpse.HasValue) continue;
+                if (entry.Role == SkillRole.Minion && MinionToLink == null) continue;
 
                 // All "when to fire" logic is in conditions
                 if (!CheckSkillConditions(gc, entry, settings)) continue;
@@ -1158,6 +1194,11 @@ namespace AutoExile.Systems
                     if (HasDebuffOnTarget(BestTarget, entry.BuffDebuffName.Length > 0 ? entry.BuffDebuffName : entry.Skill?.InternalName ?? ""))
                         return false;
                 }
+                else if (entry.Role == SkillRole.Minion)
+                {
+                    // Minion buff gating is handled during target selection (MinionToLink already
+                    // excludes minions that carry the buff) — don't check player buffs here.
+                }
                 else
                 {
                     if (HasBuff(gc, entry.Skill, entry.BuffDebuffName))
@@ -1194,6 +1235,7 @@ namespace AutoExile.Systems
             {
                 SkillRole.Enemy => BestTarget?.GridPosNum,
                 SkillRole.Corpse => NearestCorpse,
+                SkillRole.Minion => MinionToLink?.GridPosNum,
                 SkillRole.Self => null,
                 _ => null
             };
@@ -1868,6 +1910,7 @@ namespace AutoExile.Systems
         Enemy,              // Aim at best hostile target (attacks, curses, debuffs, warcries)
         Corpse,             // Aim at nearest corpse (offerings, detonate dead)
         Self,               // No cursor needed — self-cast (buffs, guards, vaal, summons)
+        Minion,             // Aim at nearest own minion (link skills — Flame/Protective/etc.)
     }
 
     public enum SkillTargetFilter

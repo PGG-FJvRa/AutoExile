@@ -1122,6 +1122,7 @@ const SKILL_TYPES = {
   vaal:     { label:'Vaal Skill', role:'Self', fields:['priority','minNearbyEnemies'], defaults:{priority:6, minNearbyEnemies:5} },
   warcry:   { label:'Warcry', role:'Enemy', fields:['priority','minNearbyEnemies','minCastIntervalMs','requireTargetable'], defaults:{priority:4, minNearbyEnemies:3} },
   summon:   { label:'Summon / Minion', role:'Self', fields:['priority'], defaults:{priority:5, summonRecast:true} },
+  link:     { label:'Link (minion)', role:'Minion', fields:['priority','minCastIntervalMs','buffDebuffName'], defaults:{priority:6, onlyWhenBuffMissing:true, minCastIntervalMs:300} },
   corpse:   { label:'Corpse Skill', role:'Corpse', fields:['priority','buffDebuffName'], defaults:{priority:5, onlyWhenBuffMissing:true} },
   totem:    { label:'Totem', role:'Enemy', fields:['priority','minNearbyEnemies','maxTargetRange','requireTargetable'], defaults:{priority:6, summonRecast:true, minNearbyEnemies:1} },
   custom:   { label:'Custom', role:null, fields:['role','priority','canCrossTerrain','targetFilter','maxTargetRange','minNearbyEnemies','minCastIntervalMs','onlyWhenBuffMissing','buffDebuffName','onlyOnLowLife','summonRecast','requireTargetable','isChannel'], defaults:{} },
