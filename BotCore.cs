@@ -726,8 +726,11 @@ namespace AutoExile
                 ?? "",
                 _navigation, _interaction, _loot, _threat);
 
-            // Currency-exchange sell scan (read-only dry run; runs while paused with stash open)
-            TickSellScan();
+            // Currency-exchange sell scan via stash-walk — DISABLED. Can't align tab indices across
+            // folders/unavailable tabs, and can't read special tabs (Currency/Ess/Frag/Oil/…) where
+            // the sellable currency actually lives. Pivoting to the exchange "I Have" picker as the
+            // holdings source instead. Method kept for reference.
+            // TickSellScan();
 
             // Only run full mode logic when running
             if (!Settings.Running)
