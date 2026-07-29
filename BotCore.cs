@@ -716,6 +716,10 @@ namespace AutoExile
                 return base.Tick();
             }
 
+            // Deterministic Flame Link on zone-enter / resurrect — links all minions incl. merc.
+            // Runs before the interrupt/area-settle gates so links land before the first wave.
+            TickMinionLink();
+
             // Global interrupts — handle before mode gets control
             if (!HandleInterrupts())
                 return base.Tick();
@@ -1697,6 +1701,88 @@ namespace AutoExile
         private DateTime _lastReviveClickAt = DateTime.MinValue;
         private DateTime _lastDismissAt = DateTime.MinValue;
         private readonly Random _rng = new();
+
+        // ── Deterministic Flame Link burst state ──
+        private long _linkSeenAreaHash = -1;
+        private bool _linkSeenDead;
+        private DateTime _linkArmedAt = DateTime.MinValue;
+        private bool _linkBurstActive;
+        private readonly HashSet<uint> _linkCastThisBurst = new();
+
+        /// <summary>
+        /// On entering a new area or resurrecting, link every nearby friendly minion (spectres,
+        /// Animated Guardian, mercenary — all non-hostile Monster entities) with Flame Link, once
+        /// each. Reuses the key from the "Link (minion)" skill slot. The mercenary only exists in
+        /// maps and can load a moment late, so the burst keeps linking new arrivals until it times
+        /// out. Only fires while the bot is Running.
+        /// </summary>
+        private void TickMinionLink()
+        {
+            var gc = GameController;
+            if (gc == null || !gc.InGame || gc.IsLoading) return;
+            var player = gc.Player;
+            if (player == null) return;
+
+            // Flame Link key comes from the configured Minion-role skill slot.
+            var linkKey = System.Windows.Forms.Keys.None;
+            foreach (var slot in Settings.Build.AllSkillSlots)
+            {
+                if (slot.Role.Value == "Minion" && slot.Key.Value != System.Windows.Forms.Keys.None)
+                { linkKey = slot.Key.Value; break; }
+            }
+            if (linkKey == System.Windows.Forms.Keys.None) return;
+
+            // ── Triggers: new area hash, or just resurrected ──
+            long hash = gc.IngameState?.Data?.CurrentAreaHash ?? 0;
+            bool alive = player.IsAlive;
+            if (hash != 0 && hash != _linkSeenAreaHash)
+            {
+                _linkSeenAreaHash = hash;
+                ArmLinkBurst();
+            }
+            if (alive && _linkSeenDead)
+                ArmLinkBurst();
+            _linkSeenDead = !alive;
+
+            if (!_linkBurstActive || !alive) return;
+
+            var sinceArm = (DateTime.Now - _linkArmedAt).TotalMilliseconds;
+            if (sinceArm < 1000) return;                                   // settle: let minions load in
+            if (sinceArm > 8000) { _linkBurstActive = false; return; }     // window closed
+            if (!BotInput.CanAct) return;
+
+            // Nearest non-hostile living minion not yet linked this burst.
+            var pPos = player.GridPosNum;
+            Entity? target = null;
+            float best = float.MaxValue;
+            foreach (var e in gc.EntityListWrapper.OnlyValidEntities)
+            {
+                if (e == null || e.Id == player.Id || e.IsHostile) continue;
+                if (e.Type != ExileCore.Shared.Enums.EntityType.Monster) continue;
+                if (_linkCastThisBurst.Contains(e.Id)) continue;
+                var life = e.GetComponent<ExileCore.PoEMemory.Components.Life>();
+                if (life == null || life.CurHP <= 0) continue;
+                var d = Vector2.Distance(e.GridPosNum, pPos);
+                if (d > 100f) continue;
+                if (d < best) { best = d; target = e; }
+            }
+            if (target == null) return; // none pending now — keep window open for late arrivals (merc)
+
+            var screen = Pathfinding.GridToScreen(gc, target.GridPosNum);
+            var rect = gc.Window.GetWindowRectangle();
+            if (screen.X < 0 || screen.X > rect.Width || screen.Y < 0 || screen.Y > rect.Height)
+            { _linkCastThisBurst.Add(target.Id); return; } // off-screen — skip this burst
+            var abs = new Vector2(rect.X + screen.X, rect.Y + screen.Y);
+            if (BotInput.CursorPressKey(abs, linkKey))
+                _linkCastThisBurst.Add(target.Id);
+        }
+
+        private void ArmLinkBurst()
+        {
+            _linkBurstActive = true;
+            _linkArmedAt = DateTime.Now;
+            _linkCastThisBurst.Clear();
+        }
 
         private bool HandleInterrupts()
         {
