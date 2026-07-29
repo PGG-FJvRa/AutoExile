@@ -869,6 +869,30 @@ namespace AutoExile
                     Graphics.DrawText("(none within 70 - stand next to your minions)", new Vector2(100, dy), SharpDX.Color.Gray);
             }
 
+            // Debug: when the Currency Exchange panel is open, dump every text-bearing element
+            // (index path + text) so we can find where the recommended rate lives before building
+            // a sell flow. Drawn top-right so it doesn't overlap the friendly-entity list.
+            try
+            {
+                var cxPanel = GameController?.IngameState?.IngameUi?.CurrencyExchangePanel;
+                if (cxPanel != null && cxPanel.IsVisible)
+                {
+                    var cxLines = new List<string>();
+                    DumpElementText(cxPanel, "", cxLines, 0);
+                    float ex = 620f, ey = 80f;
+                    Graphics.DrawText("-- CurrencyExchangePanel text dump --", new Vector2(ex, ey), SharpDX.Color.Orange);
+                    ey += 16f;
+                    int cn = 0;
+                    foreach (var cl in cxLines)
+                    {
+                        if (cn++ >= 45) break;
+                        Graphics.DrawText(cl, new Vector2(ex, ey), SharpDX.Color.White);
+                        ey += 14f;
+                    }
+                }
+            }
+            catch { }
+
             // Loot tracker overlay (top-right area)
             var winWidth = GameController.Window.GetWindowRectangle().Width;
             _lootTracker.Render(Graphics, new Vector2(winWidth - 250, 80));
@@ -1782,6 +1806,26 @@ namespace AutoExile
             _linkBurstActive = true;
             _linkArmedAt = DateTime.Now;
             _linkCastThisBurst.Clear();
+        }
+
+        // Debug helper: recursively collect (index-path : text) for every text-bearing element,
+        // used to locate the recommended rate inside the Currency Exchange panel.
+        private static void DumpElementText(ExileCore.PoEMemory.Element e, string path, List<string> outLines, int depth)
+        {
+            if (e == null || depth > 10 || outLines.Count > 60) return;
+            try
+            {
+                var t = e.Text;
+                if (!string.IsNullOrWhiteSpace(t))
+                    outLines.Add($"{(path.Length == 0 ? "root" : path)}: {t}");
+                var kids = e.Children;
+                if (kids != null)
+                {
+                    for (int i = 0; i < kids.Count; i++)
+                        DumpElementText(kids[i], path.Length == 0 ? i.ToString() : path + "/" + i, outLines, depth + 1);
+                }
+            }
+            catch { }
         }
 
         private bool HandleInterrupts()
