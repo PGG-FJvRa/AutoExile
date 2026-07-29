@@ -38,7 +38,6 @@ namespace AutoExile
         private StashSystem _stash = new();
         private StashIndexer _stashIndex = new();
         private FaustusSystem _faustus = new();
-        private SellExchangeSystem _sellExchange = new();
 
         // Gem level-up
         private DateTime _lastGemLevelAt = DateTime.MinValue;
@@ -182,6 +181,7 @@ namespace AutoExile
             };
 
             RegisterMode(new IdleMode());
+            RegisterMode(new SellMode());
             _followerMode = new FollowerMode();
             RegisterMode(_followerMode);
             _blightMode = new BlightMode();
@@ -779,23 +779,6 @@ namespace AutoExile
                 _followerMode.LootNearLeaderOnly = Settings.Follower.LootNearLeaderOnly.Value;
             }
 
-            // Currency-exchange sell run takes priority over the farm mode while active.
-            if (Settings.Build.SellSurplusNow.Value && !_sellExchange.IsBusy)
-            {
-                Settings.Build.SellSurplusNow.Value = false; // consume the one-shot trigger
-                var sellExcl = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var e in (Settings.Build.SellExclusions.Value ?? "")
-                         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                    sellExcl.Add(e);
-                _sellExchange.Start(Settings.Build.SellMaxOrdersPerRun.Value, SellThresholdChaos, sellExcl);
-                LogMessage("[AutoExile] Sell surplus run started");
-            }
-            if (_sellExchange.IsBusy)
-            {
-                _sellExchange.Tick(_ctx);
-                return base.Tick();
-            }
-
             // Let the active mode decide what to do (may set up navigation paths)
             _mode.Tick(_ctx);
 
@@ -867,6 +850,10 @@ namespace AutoExile
                             :                                SharpDX.Color.LightGray;
             }
             Graphics.DrawText(runtimeText, new Vector2(100, 96), runtimeColor);
+
+            // Sell mode status (shows where the currency-exchange sell run is).
+            if (_mode is SellMode sellMode)
+                Graphics.DrawText($"SELL: {sellMode.Status}", new Vector2(100, 140), SharpDX.Color.Gold);
 
             // Human recorder indicator
             if (_humanRecorder.IsRecording)
