@@ -1973,6 +1973,13 @@ namespace AutoExile
         private void BuildSellCandidatesFromPicker(dynamic picker)
         {
             _sellCandidateLines.Clear();
+
+            // Exclusions come from the editable "Sell Exclusions" dashboard field.
+            var excl = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var e in (Settings.Build.SellExclusions.Value ?? "")
+                     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                excl.Add(e);
+
             var rows = new List<(string name, int qty, double unit, double total)>();
             try
             {
@@ -1980,7 +1987,7 @@ namespace AutoExile
                 {
                     string name = null;
                     try { name = (string)opt.ItemType.BaseName; } catch { }
-                    if (string.IsNullOrEmpty(name) || _sellExclusions.Contains(name)) continue;
+                    if (string.IsNullOrEmpty(name) || excl.Contains(name)) continue;
                     int qty = ReadPickerQty((ExileCore.PoEMemory.Element)opt);
                     if (qty <= 0) continue;
                     double unit = UnitChaos(name);
@@ -1994,7 +2001,9 @@ namespace AutoExile
 
             rows.Sort((a, b) => b.total.CompareTo(a.total));
             double grand = 0; foreach (var r in rows) grand += r.total;
-            _sellCandidateLines.Add($"WOULD SELL {rows.Count} stacks  (~{grand:F0}c)  [dry run]");
+            double cpd = _ninjaPrice.ChaosPerDivine;
+            string divStr = cpd > 0 ? $"  (~{grand / cpd:F1} div)" : "";
+            _sellCandidateLines.Add($"TOTAL IF SOLD: {grand:F0}c{divStr}  -  {rows.Count} stacks over {SellThresholdChaos:F0}c  [dry run]");
             foreach (var r in rows)
                 _sellCandidateLines.Add($"{r.name}  x{r.qty}  @{r.unit:F2}c  = {r.total:F0}c");
         }

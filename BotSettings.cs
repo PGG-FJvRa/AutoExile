@@ -202,6 +202,9 @@ namespace AutoExile
             [Menu("Blacklisted Enemies", "Comma-separated enemy render names to ignore globally. These monsters are excluded from all combat and seek-and-destroy logic.")]
             public TextNode BlacklistedEnemies { get; set; } = new TextNode("");
 
+            [Menu("Sell Exclusions", "Comma-separated item base names the currency-exchange seller must NEVER auto-sell.")]
+            public TextNode SellExclusions { get; set; } = new TextNode("Divine Orb, Stacked Deck, Scroll of Wisdom, Portal Scroll, Chaos Orb, Mirror of Kalandra, Simulacrum, Simulacrum Splinter");
+
             [Menu("Default Positioning", "How to position relative to monsters. Modes can override.")]
             public ListNode DefaultPositioning { get; set; } = new ListNode();
 

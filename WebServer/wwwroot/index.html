@@ -1406,6 +1406,7 @@ function renderAllSettings() {
   addSection(build, 'Combat', [['build.defaultPositioning'],['build.fightRange'],['build.bossKeepDistance','0 = off; ~45 kites Kosis/Omniphobia'],['build.combatRange'],
     ['build.guardHpThreshold'],['build.guardEsThreshold'],['build.vaalMinMonsters'],['build.summonExpectedCount']]);
   build.appendChild(buildEnemyBlacklist());
+  build.appendChild(buildTagListEditor('build.sellExclusions', 'Sell Exclusions (never auto-sell)', 'e.g. Divine Orb'));
   build.appendChild(renderSkillsSection());
   addSection(build, 'Flasks', [['build.flasksEnabled'],['build.lifeFlaskSlot','0 = disabled'],['build.lifeFlaskHpThreshold'],
     ['build.manaFlaskSlot','0 = disabled'],['build.manaFlaskManaThreshold'],['build.utilityFlaskIntervalMs']]);
