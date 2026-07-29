@@ -1403,7 +1403,7 @@ function renderAllSettings() {
   // Build tab
   const build = makeTabContent('build', activeSettingsTab === 'build');
   addSection(build, 'Movement', [['build.blinkRange'],['build.dashMinDistance','0 = disable dash-for-speed'],['build.pathMergeThreshold','0 = disabled']]);
-  addSection(build, 'Combat', [['build.defaultPositioning'],['build.fightRange'],['build.combatRange'],
+  addSection(build, 'Combat', [['build.defaultPositioning'],['build.fightRange'],['build.bossKeepDistance','0 = off; ~45 kites Kosis/Omniphobia'],['build.combatRange'],
     ['build.guardHpThreshold'],['build.guardEsThreshold'],['build.vaalMinMonsters'],['build.summonExpectedCount']]);
   build.appendChild(buildEnemyBlacklist());
   build.appendChild(renderSkillsSection());
