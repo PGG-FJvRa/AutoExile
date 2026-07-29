@@ -384,6 +384,9 @@ namespace AutoExile.Systems
         /// <summary>Positions of alive keep-distance bosses (Kosis/Omniphobia) to kite away from (reused buffer).</summary>
         private readonly List<Vector2> _keepDistanceThreats = new();
 
+        /// <summary>Current strafe direction (+1/-1) for orbiting keep-distance bosses; flips when blocked.</summary>
+        private int _bossOrbitDir = 1;
+
         /// <summary>Only monsters reachable via straight-line walk (pf LOS), with rarity weight for density.</summary>
         private readonly List<(Vector2 pos, float weight)> _walkableMonsterWeighted = new();
 
@@ -1531,53 +1534,67 @@ namespace AutoExile.Systems
 
             if (BestTarget == null || NearbyMonsterCount == 0) return;
 
-            // ── Keep distance from designated bosses (Kosis / Omniphobia) ──
-            // Squishy builds die standing in their melee. When one is inside the keep-distance
-            // ring, kite directly away — repulsion summed over all such bosses handles both being
-            // alive at once — to a walkable spot that still sees the boss so skills/minions keep
-            // hitting. Beyond the ring, hold position and refuse to re-approach into melee.
+            // ── Orbit designated bosses (Kosis / Omniphobia) ──
+            // Standing at range still dies to their frontal attacks, which track the player. So
+            // instead of holding, STRAFE around the boss: move sideways (tangent) while correcting
+            // radius back to the keep-distance ring. Constant lateral motion walks the player out
+            // of frontal cones and forces the boss to keep re-facing. Orbit the centroid so both
+            // bosses alive at once are handled; reverse strafe direction when the spot is blocked
+            // (wall / arena edge), and shove straight out only if boxed in while too close.
             int bossKeepDist = settings.BossKeepDistance.Value;
             if (bossKeepDist > 0 && _keepDistanceThreats.Count > 0)
             {
                 var pGrid = gc.Player.GridPosNum;
-                Vector2 repulse = Vector2.Zero;
+                Vector2 center = Vector2.Zero;
                 float nearestThreat = float.MaxValue;
-                Vector2 nearestThreatPos = _keepDistanceThreats[0];
                 foreach (var t in _keepDistanceThreats)
                 {
+                    center += t;
                     float d = Vector2.Distance(pGrid, t);
-                    if (d < nearestThreat) { nearestThreat = d; nearestThreatPos = t; }
-                    if (d < bossKeepDist)
-                        repulse += SafeNormalize(pGrid - t) * (bossKeepDist - d);
+                    if (d < nearestThreat) nearestThreat = d;
                 }
+                center /= _keepDistanceThreats.Count;
 
-                if (nearestThreat < bossKeepDist)
+                // Only orbit while actually near a boss; otherwise let normal positioning approach.
+                if (nearestThreat <= settings.CombatRange.Value)
                 {
-                    var fleeDir = repulse != Vector2.Zero
-                        ? SafeNormalize(repulse)
-                        : SafeNormalize(pGrid - nearestThreatPos);
-                    var fleeTarget = pGrid + fleeDir * (bossKeepDist - nearestThreat + 10f);
+                    var radial = pGrid - center;
+                    float curR = radial.Length();
+                    var radialDir = curR > 0.001f ? radial / curR : new Vector2(1f, 0f);
                     var pfBoss = gc.IngameState.Data.RawFramePathfindingData;
-                    // Prefer a walkable spot along the flee vector that still sees the boss.
-                    var safePos = ctx.Navigation.FindWalkableWithLOS(gc, fleeTarget, nearestThreatPos, 25)
-                               ?? ctx.Navigation.FindWalkableWithLOS(gc, pGrid, nearestThreatPos, 25);
-                    if (safePos.HasValue &&
-                        (pfBoss == null || Pathfinding.HasLineOfSight(pfBoss, pGrid, safePos.Value)))
+                    float step = MathF.Min(bossKeepDist * 0.5f, 18f);
+
+                    Vector2? chosen = null;
+                    for (int attempt = 0; attempt < 2 && !chosen.HasValue; attempt++)
+                    {
+                        var tangent = new Vector2(-radialDir.Y, radialDir.X) * _bossOrbitDir;
+                        var target = pGrid + tangent * step + radialDir * (bossKeepDist - curR);
+                        var cand = ctx.Navigation.FindWalkableWithLOS(gc, target, center, 20);
+                        if (cand.HasValue &&
+                            (pfBoss == null || Pathfinding.HasLineOfSight(pfBoss, pGrid, cand.Value)))
+                            chosen = cand;
+                        else
+                            _bossOrbitDir = -_bossOrbitDir; // strafe spot blocked — reverse next try
+                    }
+
+                    // Boxed in but too close — shove straight out from the boss as a last resort.
+                    if (!chosen.HasValue && nearestThreat < bossKeepDist)
+                    {
+                        var outTarget = pGrid + radialDir * (bossKeepDist - nearestThreat + 10f);
+                        chosen = ctx.Navigation.FindWalkableWithLOS(gc, outTarget, center, 20)
+                              ?? ctx.Navigation.FindWalkableWithLOS(gc, pGrid, center, 20);
+                    }
+
+                    if (chosen.HasValue)
                     {
                         WantsToMove = true;
-                        MoveTargetGrid = safePos.Value;
-                        MoveTarget = ToWorld(safePos.Value);
-                        ExecuteMove(gc, safePos.Value);
-                        LastAction = $"keeping distance from boss ({nearestThreat:F0}<{bossKeepDist})";
+                        MoveTargetGrid = chosen.Value;
+                        MoveTarget = ToWorld(chosen.Value);
+                        ExecuteMove(gc, chosen.Value);
+                        LastAction = $"orbiting boss (r={curR:F0}/{bossKeepDist} dir={_bossOrbitDir})";
                         return;
                     }
-                    // No safe walkable spot found — fall through to normal positioning as a last resort.
-                }
-                else
-                {
-                    // At/beyond safe distance — hold here and let skills fire; don't re-enter melee.
-                    LastAction = $"holding at boss range ({nearestThreat:F0}>={bossKeepDist})";
-                    return;
+                    // Nothing walkable — fall through to normal positioning.
                 }
             }
 
