@@ -249,7 +249,7 @@ tr:hover td { background:var(--surface2); }
         <select id="modeSelect" class="mode-select">
           <option>Idle</option><option>Wave Farming</option><option>Simulacrum</option>
           <option>Blight</option><option value="Heist">Heist (WIP)</option><option>Labyrinth</option>
-          <option>Follower</option><option>Boss</option>
+          <option>Follower</option><option>Boss</option><option>Sell</option>
         </select>
         <button class="btn primary" onclick="sendCmd('start')">Start</button>
         <button class="btn danger" onclick="sendCmd('stop')">Stop</button>
@@ -1197,6 +1197,7 @@ const MODE_SETTINGS = {
   Labyrinth:   { sections: ['labyrinth'], mechanics: [] },
   Boss:        { sections: ['boss'], mechanics: [] },
   Follower:    { sections: ['follower'], mechanics: [] },
+  Sell:        { sections: [], mechanics: [] },
 };
 
 let currentBotMode = 'Idle';
