@@ -48,6 +48,23 @@ namespace AutoExile
         private ThreatSystem _threat = new();
         private EldritchAltarHandler _altarHandler = new();
         private NinjaPriceService _ninjaPrice = new();
+
+        // ── Currency-exchange sell scan (Phase 1: read-only dry run) ──
+        private bool _sellScanStarted;
+        private bool _sellScanDone;
+        private bool _stashWasOpen;
+        private readonly List<string> _sellCandidateLines = new();
+        private const double SellThresholdChaos = 50.0;
+        private static readonly HashSet<string> _sellExclusions = new(StringComparer.OrdinalIgnoreCase)
+        { "Divine Orb", "Stacked Deck", "Scroll of Wisdom", "Portal Scroll", "Chaos Orb" };
+        private static readonly NinjaPriceCategory[] _exchangeEligibleCats =
+        {
+            NinjaPriceCategory.Currency, NinjaPriceCategory.Fragment, NinjaPriceCategory.Scarab,
+            NinjaPriceCategory.Essence, NinjaPriceCategory.Oil, NinjaPriceCategory.Fossil,
+            NinjaPriceCategory.Resonator, NinjaPriceCategory.DeliriumOrb, NinjaPriceCategory.Artifact,
+            NinjaPriceCategory.Omen, NinjaPriceCategory.KalguuranRune, NinjaPriceCategory.AllflameEmber,
+            NinjaPriceCategory.DjinnCoin, NinjaPriceCategory.Astrolabe,
+        };
         private RuntimeTracker _runtime = new();
         private EntityCache _entityCache = new();
         private ThreatMap _threatMap = new();
@@ -709,6 +726,9 @@ namespace AutoExile
                 ?? "",
                 _navigation, _interaction, _loot, _threat);
 
+            // Currency-exchange sell scan (read-only dry run; runs while paused with stash open)
+            TickSellScan();
+
             // Only run full mode logic when running
             if (!Settings.Running)
             {
@@ -892,6 +912,30 @@ namespace AutoExile
                 }
             }
             catch { }
+
+            // Sell-scan dry-run overlay (left side, below the friendly-entity list)
+            if (!running && (_sellCandidateLines.Count > 0 || _stashIndex.IsRunning) &&
+                GameController?.IngameState?.IngameUi?.StashElement?.IsVisible == true)
+            {
+                float sx = 100f, sy = 360f;
+                Graphics.DrawText("-- Currency-exchange sell candidates (dry run) --", new Vector2(sx, sy), SharpDX.Color.Gold);
+                sy += 16f;
+                if (_stashIndex.IsRunning)
+                {
+                    Graphics.DrawText(_stashIndex.Status, new Vector2(sx, sy), SharpDX.Color.Gray);
+                }
+                else
+                {
+                    int shown = 0;
+                    foreach (var line in _sellCandidateLines)
+                    {
+                        if (shown++ >= 32) break;
+                        Graphics.DrawText(line, new Vector2(sx, sy), SharpDX.Color.Yellow);
+                        sy += 15f;
+                        if (sy > 950f) break;
+                    }
+                }
+            }
 
             // Loot tracker overlay (top-right area)
             var winWidth = GameController.Window.GetWindowRectangle().Width;
@@ -1826,6 +1870,79 @@ namespace AutoExile
                 }
             }
             catch { }
+        }
+
+        // ── Currency-exchange sell scan (Phase 1: read-only dry run) ──
+        // While paused with the stash open, walk every tab once and list the stacks that WOULD be
+        // sold for Chaos (whole-stack value >= threshold, exchange-eligible currency type, not on
+        // the exclusion list). Places NO orders — this only validates the selection.
+        private void TickSellScan()
+        {
+            if (Settings.Running) return;
+            var gc = GameController;
+            if (gc == null || !gc.InGame) return;
+            var stashOpen = gc.IngameState?.IngameUi?.StashElement?.IsVisible == true;
+
+            if (stashOpen != _stashWasOpen)
+            {
+                _stashWasOpen = stashOpen;
+                if (stashOpen) { _sellScanStarted = false; _sellScanDone = false; _sellCandidateLines.Clear(); }
+                else { _stashIndex.Reset(); }
+            }
+
+            if (!stashOpen || _sellScanDone || !_ninjaPrice.IsLoaded) return;
+
+            if (!_sellScanStarted) { _stashIndex.Start(); _sellScanStarted = true; }
+            _stashIndex.Tick(gc);
+            if (!_stashIndex.IsComplete) return;
+
+            BuildSellCandidates();
+            _sellScanDone = true;
+        }
+
+        private void BuildSellCandidates()
+        {
+            _sellCandidateLines.Clear();
+            var agg = new Dictionary<string, (int stack, double unit)>(StringComparer.OrdinalIgnoreCase);
+            foreach (var tab in _stashIndex.Tabs)
+            {
+                foreach (var it in tab.Items)
+                {
+                    var name = it.BaseName;
+                    if (string.IsNullOrEmpty(name) || _sellExclusions.Contains(name)) continue;
+                    double unit = UnitChaos(name);
+                    if (unit <= 0.0) continue;
+                    if (agg.TryGetValue(name, out var cur))
+                        agg[name] = (cur.stack + it.Stack, unit);
+                    else
+                        agg[name] = (it.Stack, unit);
+                }
+            }
+
+            var rows = new List<(string name, int stack, double unit, double total)>();
+            foreach (var kv in agg)
+            {
+                double total = kv.Value.stack * kv.Value.unit;
+                if (total >= SellThresholdChaos)
+                    rows.Add((kv.Key, kv.Value.stack, kv.Value.unit, total));
+            }
+            rows.Sort((a, b) => b.total.CompareTo(a.total));
+
+            double grand = 0;
+            foreach (var r in rows) grand += r.total;
+            _sellCandidateLines.Add($"WOULD SELL {rows.Count} stacks  (~{grand:F0}c total)  [dry run]");
+            foreach (var r in rows)
+                _sellCandidateLines.Add($"{r.name}  x{r.stack}  @{r.unit:F1}c  = {r.total:F0}c");
+        }
+
+        private double UnitChaos(string name)
+        {
+            foreach (var cat in _exchangeEligibleCats)
+            {
+                var pr = _ninjaPrice.GetPrice(name, cat);
+                if (pr.MaxChaosValue > 0.0) return pr.MaxChaosValue;
+            }
+            return 0.0;
         }
 
         private bool HandleInterrupts()
