@@ -299,45 +299,15 @@ namespace AutoExile.Systems
                     return;
                 }
 
-                // 2) Focus the search box. CRITICAL: do NOT advance to typing unless the box was
-                // found and clicked — otherwise letters leak to the game (movement/skills). If it's
-                // not found we keep waiting (the state timeout aborts safely) rather than type.
-                if (!_searchFocused)
-                {
-                    if (!CanClick()) return;
-                    var box = FindElementContaining((ExileCore.PoEMemory.Element)panel, "select currency", 0);
-                    if (box == null) { Status = "Sell: search box not found — waiting (not typing)"; return; }
-                    ClickRect(gc, box);
-                    _searchFocused = true;
-                    AddLog("focused search box");
-                    return;
-                }
-
-                // 3) Type the filter one key at a time with a real delay so keys don't drop.
-                if (!_ownedFilter)
-                {
-                    if (_searchIndex < _searchText.Length)
-                    {
-                        if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return;
-                        if (!BotInput.CanAct) return;
-                        var k = CharToKey(_searchText[_searchIndex]);
-                        if (k != System.Windows.Forms.Keys.None) BotInput.PressKey(k);
-                        _lastTypeAt = DateTime.Now;
-                        if (_searchIndex == 0) AddLog($"typing '{_searchText}'");
-                        _searchIndex++;
-                        return;
-                    }
-                    _ownedFilter = true;         // finished typing the filter
-                    _lastClickAt = DateTime.Now; // brief settle for the list to filter
-                    return;
-                }
-
-                var visOpt = FindVisibleByText((ExileCore.PoEMemory.Element)panel, _current, 0f, 2050f, 0);
-                if (visOpt == null) { Status = $"Sell: {_current} not visible"; return; }
+                // 2) Click the target's on-screen cell within the picker grid — no typing, so no
+                // risk of keys leaking to the game. The topmost on-screen match is the Owned cell
+                // (searching the picker subtree excludes the panel's I-Have slot label).
+                var cell = FindTopmostVisible((ExileCore.PoEMemory.Element)picker, _current, 100f, 2000f, 0);
+                if (cell == null) { Status = $"Sell: {_current} not visible in Owned view"; return; }
                 if (!CanClick()) return;
-                var orect = visOpt.GetClientRect();
-                AddLog($"have {_current} visY={orect.Y:F0}");
-                ClickRect(gc, visOpt);
+                var orect = cell.GetClientRect();
+                AddLog($"have {_current} y={orect.Y:F0}");
+                ClickRect(gc, cell);
                 _havePicked = true;
                 Status = $"Sell: selected I Have = {_current}";
                 return;
@@ -561,6 +531,33 @@ namespace AutoExile.Systems
             }
             var s = sb.ToString().Trim();
             return s.Length > 0 ? s : name;
+        }
+
+        // Among all descendants whose normalized text contains 'name' with rect.Y in [minY, maxY],
+        // return the topmost (smallest Y) — the on-screen grid cell, not off-screen data rows.
+        private static ExileCore.PoEMemory.Element FindTopmostVisible(ExileCore.PoEMemory.Element root, string name, float minY, float maxY, int depth)
+        {
+            if (root == null || depth > 18) return null;
+            ExileCore.PoEMemory.Element best = null;
+            float bestY = float.MaxValue;
+            try
+            {
+                var t = root.Text;
+                if (!string.IsNullOrEmpty(t) && Norm(t).Contains(Norm(name)))
+                {
+                    var r = root.GetClientRect();
+                    if (r.Y >= minY && r.Y <= maxY) { best = root; bestY = r.Y; }
+                }
+                var kids = root.Children;
+                if (kids != null)
+                    for (int i = 0; i < kids.Count; i++)
+                    {
+                        var f = FindTopmostVisible(kids[i], name, minY, maxY, depth + 1);
+                        if (f != null) { var fy = f.GetClientRect().Y; if (fy < bestY) { best = f; bestY = fy; } }
+                    }
+            }
+            catch { }
+            return best;
         }
 
         // Lowercase, keep letters/digits, collapse whitespace, drop punctuation (apostrophes etc.)
