@@ -557,7 +557,18 @@ namespace AutoExile
             BotInput.ActionCooldownMs = Settings.ActionCooldownMs.Value;
             BotInput.WindowRect = GameController.Window.GetWindowRectangleTimeCache;
             BotInput.TickHeldKeys(); // Safety watchdog — auto-release stale held keys
-            BotInput.TickMovementLayer(); // Auto-resume movement after discrete actions
+
+            // While the currency-exchange panel is open during a Sell run we are parked at Faustus and
+            // need NO movement. Force the movement layer OFF and don't auto-resume it: otherwise every
+            // keystroke's SuspendMovement snaps the cursor to screen-centre and the layer re-presses the
+            // move key — which yanks the cursor off the search box and leaks the move key into it
+            // (the search box "deselecting itself" mid-type). Nav is likewise skipped below.
+            bool sellPanelOpen = _mode is Modes.SellMode
+                && GameController.IngameState.IngameUi.CurrencyExchangePanel?.IsVisible == true;
+            if (sellPanelOpen)
+                BotInput.StopMovement();          // release the move key, mark movement inactive
+            else
+                BotInput.TickMovementLayer();      // Auto-resume movement after discrete actions
 
             // Sync primary movement key from skill config → NavigationSystem + CombatSystem
             var primaryMove = Settings.Build.GetPrimaryMovement();
@@ -783,8 +794,10 @@ namespace AutoExile
             // Navigation ticks AFTER mode — mode sets up/updates paths, then nav executes movement.
             // This prevents stale walk commands: the walk command always targets the current path,
             // not a path that's about to be replaced.
-            // Only tick nav when no async action is in flight (cursor settle / key hold).
-            if (canAct)
+            // Only tick nav when no async action is in flight (cursor settle / key hold), and NEVER
+            // while the Sell exchange panel is open — a stray walk command would move the cursor off
+            // the search box and press the move key into it.
+            if (canAct && !sellPanelOpen)
                 _navigation.Tick(GameController);
 
             // Auto level gems (global) — but not during a Sell run (its clicks would defocus the
