@@ -265,18 +265,20 @@ namespace AutoExile.Systems
 
             if (picker != null && picker.IsVisible && !picker.IsPickingWantedCurrency)
             {
-                // Shrink the 1000+ item list to just owned currencies so the target is on-screen.
+                // Type the currency name into the picker's (auto-focused) search box to filter the
+                // 1000+ item list down to the match, which then appears at the top / on-screen.
                 if (!_ownedFilter)
                 {
                     if (!CanClick()) return;
-                    var ownedTab = FindElementByText((ExileCore.PoEMemory.Element)panel, "Owned", 0);
+                    var q = SearchPrefix(_current);
+                    BotInput.TypeText(q);
                     _ownedFilter = true;
-                    if (ownedTab != null) { ClickRect(gc, ownedTab); AddLog("clicked Owned filter"); return; }
-                    AddLog("Owned tab not found");
+                    _lastClickAt = DateTime.Now;
+                    AddLog($"typed '{q}' to search");
                     return;
                 }
 
-                var visOpt = FindVisibleByText((ExileCore.PoEMemory.Element)panel, _current, 0f, 3000f, 0);
+                var visOpt = FindVisibleByText((ExileCore.PoEMemory.Element)panel, _current, 0f, 2050f, 0);
                 if (visOpt == null) { Status = $"Sell: {_current} not visible"; return; }
                 if (!CanClick()) return;
                 var orect = visOpt.GetClientRect();
@@ -416,6 +418,22 @@ namespace AutoExile.Systems
             }
             catch { }
             return null;
+        }
+
+        // Typeable prefix for the search box: letters/digits/spaces up to the first punctuation
+        // (e.g. an apostrophe), so it stays a valid substring of the display name.
+        // "Dead Man's Sulphur" -> "dead man"; "Orb of Annulment" -> "orb of annulment".
+        private static string SearchPrefix(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "";
+            var sb = new System.Text.StringBuilder();
+            foreach (var c in name)
+            {
+                if (char.IsLetterOrDigit(c) || c == ' ') sb.Append(char.ToLowerInvariant(c));
+                else break;
+            }
+            var s = sb.ToString().Trim();
+            return s.Length > 0 ? s : name;
         }
 
         // Lowercase, keep letters/digits, collapse whitespace, drop punctuation (apostrophes etc.)

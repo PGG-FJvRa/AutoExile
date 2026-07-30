@@ -1225,6 +1225,29 @@ namespace AutoExile.Systems
         }
 
         /// <summary>
+        /// Type literal text into a focused game text field (e.g. a search box). Sends letters,
+        /// digits and spaces; other characters are skipped. Brief blocking delays let the game
+        /// register each keystroke.
+        /// </summary>
+        public static void TypeText(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            foreach (char ch in text)
+            {
+                char c = char.ToLowerInvariant(ch);
+                Keys k;
+                if (c >= 'a' && c <= 'z') k = (Keys)((int)Keys.A + (c - 'a'));
+                else if (c >= '0' && c <= '9') k = (Keys)((int)Keys.D0 + (c - '0'));
+                else if (c == ' ') k = Keys.Space;
+                else continue;
+                SendKeyDown(k, "type");
+                System.Threading.Thread.Sleep(25);
+                SendKeyUp(k, "type");
+                System.Threading.Thread.Sleep(25);
+            }
+        }
+
+        /// <summary>
         /// Press and release a key WITHOUT interrupting continuous movement.
         /// For self-cast skills (buffs, guards, flasks) that don't need cursor positioning.
         /// Uses a shorter gate since no cursor movement is involved.
