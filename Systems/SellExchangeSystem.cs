@@ -51,9 +51,11 @@ namespace AutoExile.Systems
         private string _searchText = "";
         private int _searchIndex;
         private bool _ownedClicked;
+        private DateTime _ownedClickedAt;
         private bool _searchFocused;
         private DateTime _searchFocusedAt;
         private bool _searchCleared;
+        private int _searchRetries;
         private DateTime _lastTypeAt = DateTime.MinValue;
         private const int TypeIntervalMs = 380;
         private bool _amountFocused;
@@ -270,7 +272,9 @@ namespace AutoExile.Systems
             _lockedHave = false;
             _searchText = SearchPrefix(_current);
             _searchIndex = 0;
+            _searchRetries = 0;
             _ownedClicked = false;
+            _ownedClickedAt = DateTime.MinValue;
             _searchFocused = false;
             _searchCleared = false;
             _amountFocused = false;
@@ -316,10 +320,17 @@ namespace AutoExile.Systems
                     if (!CanClick()) return;
                     var ownedTab = FindElementByText((ExileCore.PoEMemory.Element)panel, "Owned", 0);
                     _ownedClicked = true;
+                    _ownedClickedAt = DateTime.Now;
                     if (ownedTab != null) { ClickRect(gc, ownedTab); AddLog("clicked Owned"); }
                     else AddLog("Owned tab not found");
                     return;
                 }
+
+                // 1b) Let the Owned grid finish loading BEFORE focusing the search box. The tab switch
+                // kicks off an async grid re-render; if we focus + type while it's still rendering, the
+                // re-render steals focus and keys leak into the game. This settle is the key fix.
+                if ((DateTime.Now - _ownedClickedAt).TotalMilliseconds < 900)
+                { Status = "Sell: settling Owned tab"; return; }
 
                 // 2) Focus the search box (its "Select currency" placeholder). SAFETY: never type
                 // unless it was found+clicked — otherwise keys leak to the game (movement/skills).
@@ -354,6 +365,20 @@ namespace AutoExile.Systems
                     {
                         if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return;
                         if (!BotInput.CanAct) return;
+                        // After the first key, verify the box actually took it — the "Select currency"
+                        // placeholder vanishes once there's input. If it's still showing, focus was lost:
+                        // re-focus and retry rather than typing the rest of the name into the game.
+                        if (_searchIndex == 1 && _searchRetries < 3
+                            && !SearchBoxHasInput((ExileCore.PoEMemory.Element)panel))
+                        {
+                            _searchRetries++;
+                            AddLog($"search not registering — re-focus (retry {_searchRetries})");
+                            _searchFocused = false;
+                            _searchCleared = false;
+                            _searchIndex = 0;
+                            _ownedClickedAt = DateTime.Now; // re-settle before re-focusing
+                            return;
+                        }
                         var k = CharToKey(_searchText[_searchIndex]);
                         if (k != System.Windows.Forms.Keys.None) BotInput.PressKey(k);
                         _lastTypeAt = DateTime.Now;
@@ -629,7 +654,9 @@ namespace AutoExile.Systems
             _lockedHave = false;
             _searchText = SearchPrefix(_current);
             _searchIndex = 0;
+            _searchRetries = 0;
             _ownedClicked = false;
+            _ownedClickedAt = DateTime.MinValue;
             _searchFocused = false;
             _searchCleared = false;
             _amountFocused = false;
@@ -676,6 +703,20 @@ namespace AutoExile.Systems
         {
             try { var e = panel.GetChildAtIndex(i); return e == null ? "" : (string)e.Text ?? ""; }
             catch { return "?"; }
+        }
+
+        // True once the search box holds typed input: the "Select currency" placeholder is gone/hidden,
+        // or child 15 shows non-placeholder text. Used to confirm the box took our first keystroke.
+        private static bool SearchBoxHasInput(ExileCore.PoEMemory.Element panel)
+        {
+            try
+            {
+                var ph = FindElementContaining(panel, "select currency", 0);
+                if (ph == null || !ph.IsVisible) return true;
+                var t = SafeChildText(panel, 15);
+                return !string.IsNullOrWhiteSpace(t) && !Norm(t).Contains(Norm("select currency"));
+            }
+            catch { return true; } // on any read error, don't block typing (degrade to old behavior)
         }
 
         // Find the used-order-slot count by scanning the panel for the "N/M" label (e.g. "0/10").
