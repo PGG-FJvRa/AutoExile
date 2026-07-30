@@ -45,6 +45,8 @@ namespace AutoExile.Systems
         private bool _havePicked;
         private bool _wantPicked;
         private bool _ownedFilter; // clicked the "Owned" category to shrink the list this candidate
+        private bool _lockedWant;
+        private bool _lockedHave;
 
         public bool IsBusy => _state != SellState.Idle;
         public string Status { get; private set; } = "";
@@ -102,6 +104,7 @@ namespace AutoExile.Systems
                 case SellState.ScanCandidates: TickScan(ctx); break;
                 case SellState.PickingHave: TickPickHave(ctx); break;
                 case SellState.PickingWant: TickPickWant(ctx); break;
+                case SellState.LockingAmounts: TickLockAmounts(ctx); break;
                 case SellState.PlacingOrder: TickPlaceOrder(ctx); break;
             }
         }
@@ -237,6 +240,8 @@ namespace AutoExile.Systems
             _havePicked = false;
             _wantPicked = false;
             _ownedFilter = false;
+            _lockedWant = false;
+            _lockedHave = false;
             Status = $"Sell: queued {added}/{optCount}; first = {_current}";
             SetState(SellState.PickingHave);
         }
@@ -271,13 +276,13 @@ namespace AutoExile.Systems
                     return;
                 }
 
-                var option = FindPickerOption(picker, null, _current);
-                if (option == null) { Status = $"Sell: {_current} not in I Have picker"; return; }
+                var prect = ((ExileCore.PoEMemory.Element)picker).GetClientRect();
+                var visOpt = FindVisibleByText((ExileCore.PoEMemory.Element)panel, _current, prect.Y, prect.Y + prect.Height, 0);
+                if (visOpt == null) { Status = $"Sell: {_current} not visible in Owned view"; return; }
                 if (!CanClick()) return;
-                var orect = option.GetClientRect();
-                var prect = picker.GetClientRect();
-                AddLog($"have {_current} oY={orect.Y:F0}-{orect.Y + orect.Height:F0} pickY={prect.Y:F0}-{prect.Y + prect.Height:F0}");
-                ClickRect(gc, option);
+                var orect = visOpt.GetClientRect();
+                AddLog($"have {_current} visY={orect.Y:F0} (pick {prect.Y:F0}-{prect.Y + prect.Height:F0})");
+                ClickRect(gc, visOpt);
                 _havePicked = true;
                 Status = $"Sell: selected I Have = {_current}";
                 return;
@@ -297,8 +302,9 @@ namespace AutoExile.Systems
 
             if (_wantPicked)
             {
-                if (picker != null && picker.IsVisible) { Status = "Sell: waiting I Want picker close"; return; }
-                SetState(SellState.PlacingOrder); return;
+                if (picker != null && picker.IsVisible && (DateTime.Now - _lastClickAt).TotalMilliseconds < 2000)
+                { Status = "Sell: waiting I Want picker close"; return; }
+                SetState(SellState.LockingAmounts); return;
             }
 
             if (picker != null && picker.IsVisible && picker.IsPickingWantedCurrency)
@@ -315,6 +321,34 @@ namespace AutoExile.Systems
             if (!CanClick()) return;
             ClickChild(gc, panel, 7, 0); // I-Want button
             Status = "Sell: opening I Want picker";
+        }
+
+        private void TickLockAmounts(BotContext ctx)
+        {
+            var gc = ctx.Game;
+            var panel = gc.IngameState.IngameUi.CurrencyExchangePanel;
+            if (panel == null || !panel.IsVisible) { Status = "Sell: panel closed"; Cancel(gc, ctx.Navigation); return; }
+            if (!CanClick()) return;
+
+            // Both amounts must be clicked ("locked in") before Place Order un-greys.
+            // Amount fields are best-guessed at panel children 5 (I-Want) and 8 (I-Have) — logged
+            // so we can correct the indices if wrong.
+            if (!_lockedWant)
+            {
+                AddLog($"amt c5='{SafeChildText(panel, 5)}' c8='{SafeChildText(panel, 8)}'");
+                ClickChildSingle(gc, panel, 5);
+                _lockedWant = true;
+                Status = "Sell: locking I Want amount";
+                return;
+            }
+            if (!_lockedHave)
+            {
+                ClickChildSingle(gc, panel, 8);
+                _lockedHave = true;
+                Status = "Sell: locking I Have amount";
+                return;
+            }
+            SetState(SellState.PlacingOrder);
         }
 
         private void TickPlaceOrder(BotContext ctx)
@@ -338,6 +372,8 @@ namespace AutoExile.Systems
             _havePicked = false;
             _wantPicked = false;
             _ownedFilter = false;
+            _lockedWant = false;
+            _lockedHave = false;
             SetState(SellState.PickingHave);
         }
 
@@ -345,6 +381,48 @@ namespace AutoExile.Systems
 
         private void SetState(SellState s) { _state = s; _stateEnteredAt = DateTime.Now; AddLog($"-> {s}"); }
         private bool CanClick() => (DateTime.Now - _lastClickAt).TotalMilliseconds >= ClickCooldownMs && BotInput.CanAct;
+
+        private void ClickChildSingle(GameController gc, dynamic panel, int i)
+        {
+            try { var el = panel.GetChildAtIndex(i); if (el != null && el.IsVisible) ClickElement(gc, (ExileCore.PoEMemory.Element)el); }
+            catch { }
+        }
+
+        private static string SafeChildText(dynamic panel, int i)
+        {
+            try { var e = panel.GetChildAtIndex(i); return e == null ? "" : (string)e.Text ?? ""; }
+            catch { return "?"; }
+        }
+
+        // Find the first element whose (normalized) text contains 'name' and whose rect is within
+        // the visible [minY, maxY] band — i.e. the on-screen picker cell, not an off-screen data row.
+        private static ExileCore.PoEMemory.Element FindVisibleByText(ExileCore.PoEMemory.Element root, string name, float minY, float maxY, int depth)
+        {
+            if (root == null || depth > 14) return null;
+            try
+            {
+                var t = root.Text;
+                if (!string.IsNullOrEmpty(t))
+                {
+                    var norm = t.Replace('\n', ' ').Replace('\r', ' ');
+                    while (norm.Contains("  ")) norm = norm.Replace("  ", " ");
+                    if (norm.Trim().IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        var r = root.GetClientRect();
+                        if (r.Y >= minY - 5 && r.Y <= maxY) return root;
+                    }
+                }
+                var kids = root.Children;
+                if (kids != null)
+                    for (int i = 0; i < kids.Count; i++)
+                    {
+                        var f = FindVisibleByText(kids[i], name, minY, maxY, depth + 1);
+                        if (f != null) return f;
+                    }
+            }
+            catch { }
+            return null;
+        }
 
         private void ClickChild(GameController gc, dynamic panel, int i, int j)
         {
@@ -478,6 +556,7 @@ namespace AutoExile.Systems
         ScanCandidates,
         PickingHave,
         PickingWant,
+        LockingAmounts,
         PlacingOrder,
     }
 }
