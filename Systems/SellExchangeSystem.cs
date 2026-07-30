@@ -313,10 +313,23 @@ namespace AutoExile.Systems
                 {
                     if (!CanClick()) return;
                     var box = FindElementContaining((ExileCore.PoEMemory.Element)panel, "select currency", 0);
-                    if (box == null) { Status = "Sell: search box not found — waiting (not typing)"; return; }
-                    ClickRect(gc, box);
+                    if (box != null)
+                    {
+                        ClickRect(gc, box);
+                        AddLog("focus search (placeholder)");
+                    }
+                    else
+                    {
+                        // Leftover text hides the "Select currency" placeholder — focus the search
+                        // box by position (bottom-centre of the picker) so it works regardless.
+                        var pr = ((ExileCore.PoEMemory.Element)picker).GetClientRect();
+                        var pos = new Vector2(pr.X + pr.Width * 0.5f, pr.Y + pr.Height - 18f);
+                        BotInput.Click(ToAbsolutePos(gc, pos));
+                        _lastClickAt = DateTime.Now;
+                        AddLog($"focus search (pos {pos.X:F0},{pos.Y:F0})");
+                    }
                     _searchFocused = true;
-                    AddLog("focused search box");
+                    _lastTypeAt = DateTime.Now; // settle before select-all/typing
                     return;
                 }
 
