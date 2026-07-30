@@ -59,6 +59,9 @@ namespace AutoExile.Systems
         private bool _amountCleared;
         private string _amountText = "";
         private int _amountIndex;
+        private bool _wantFocused;
+        private bool _wantCleared;
+        private bool _wantTyped;
 
         public bool IsBusy => _state != SellState.Idle;
         public string Status { get; private set; } = "";
@@ -265,6 +268,9 @@ namespace AutoExile.Systems
             _amountCleared = false;
             _amountText = _currentQty.ToString();
             _amountIndex = 0;
+            _wantFocused = false;
+            _wantCleared = false;
+            _wantTyped = false;
             Status = $"Sell: queued {added}/{optCount}; first = {_current}";
             SetState(SellState.PickingHave);
         }
@@ -435,24 +441,46 @@ namespace AutoExile.Systems
                 return;
             }
 
-            // Amounts entered — lock both by clicking them (Place Order stays greyed until locked).
-            if (!_lockedHave)
+            // I-Have stack is set. Now type 0 into the I-Want (Chaos) amount box (child 5): the
+            // exchange auto-computes a valid ratio + amount, which un-greys Place Order (this is the
+            // manual flow — typing an amount then 0 on the other side).
+            if (!_wantFocused)
             {
                 if (!CanClick()) return;
-                ClickChildSingle(gc, panel, 8);
-                _lockedHave = true;
-                Status = "Sell: locking I Have amount";
-                return;
-            }
-            if (!_lockedWant)
-            {
-                if (!CanClick()) return;
-                AddLog($"lock c5='{SafeChildText(panel, 5)}' c8='{SafeChildText(panel, 8)}'");
+                var c5 = SafeChildText(panel, 5);
+                if (!IsNumericAmount(c5))
+                {
+                    AddLog($"abort: I-Want box c5='{c5}' not numeric");
+                    Status = "Sell: I-Want box not found — aborting";
+                    Cancel(gc, ctx.Navigation);
+                    return;
+                }
+                AddLog($"want box c5='{c5}' -> 0");
                 ClickChildSingle(gc, panel, 5);
-                _lockedWant = true;
-                Status = "Sell: locking I Want amount";
+                _wantFocused = true;
+                _lastTypeAt = DateTime.Now;
                 return;
             }
+            if (!_wantCleared)
+            {
+                if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return;
+                BotInput.SelectAll();
+                _wantCleared = true;
+                _lastTypeAt = DateTime.Now;
+                return;
+            }
+            if (!_wantTyped)
+            {
+                if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return;
+                if (!BotInput.CanAct) return;
+                BotInput.PressKey(System.Windows.Forms.Keys.D0); // type "0"
+                _wantTyped = true;
+                _lastTypeAt = DateTime.Now;
+                AddLog("typed 0 into I-Want");
+                return;
+            }
+            // Give the exchange a moment to recompute the ratio before placing.
+            if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < 500) return;
             SetState(SellState.PlacingOrder);
         }
 
@@ -489,6 +517,9 @@ namespace AutoExile.Systems
             _amountCleared = false;
             _amountText = _currentQty.ToString();
             _amountIndex = 0;
+            _wantFocused = false;
+            _wantCleared = false;
+            _wantTyped = false;
             SetState(SellState.PickingHave);
         }
 
