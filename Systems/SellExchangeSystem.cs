@@ -315,15 +315,14 @@ namespace AutoExile.Systems
                 if (!_searchFocused)
                 {
                     if (!CanClick()) return;
-                    // Focus the search box by its element (hits the box precisely). If it's not
-                    // found — leftover text from an interrupted run hid its placeholder — wait
-                    // rather than click blindly (reopen the exchange to reset).
+                    // The search box is panel child 15 (holds the "Select currency" placeholder when
+                    // empty). Click it by index — works regardless of any leftover text. Prefer the
+                    // placeholder element when present (most precise), else fall back to child 15.
                     var box = FindElementContaining((ExileCore.PoEMemory.Element)panel, "select currency", 0);
-                    if (box == null) { Status = "Sell: search box not found — reopen exchange to reset"; return; }
-                    ClickRect(gc, box);
+                    if (box != null) { ClickRect(gc, box); AddLog("focus search (placeholder)"); }
+                    else { ClickChildSingle(gc, panel, 15); AddLog($"focus search (child15='{SafeChildText(panel, 15)}')"); }
                     _searchFocused = true;
                     _searchFocusedAt = DateTime.Now;
-                    AddLog("focused search box");
                     return;
                 }
 
