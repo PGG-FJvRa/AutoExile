@@ -49,6 +49,10 @@ namespace AutoExile.Systems
         private bool _lockedHave;
         private string _searchText = "";
         private int _searchIndex;
+        private bool _ownedClicked;
+        private bool _searchFocused;
+        private DateTime _lastTypeAt = DateTime.MinValue;
+        private const int TypeIntervalMs = 280;
 
         public bool IsBusy => _state != SellState.Idle;
         public string Status { get; private set; } = "";
@@ -246,6 +250,8 @@ namespace AutoExile.Systems
             _lockedHave = false;
             _searchText = SearchPrefix(_current);
             _searchIndex = 0;
+            _ownedClicked = false;
+            _searchFocused = false;
             Status = $"Sell: queued {added}/{optCount}; first = {_current}";
             SetState(SellState.PickingHave);
         }
@@ -271,15 +277,38 @@ namespace AutoExile.Systems
             {
                 // Type the currency name into the picker's (auto-focused) search box to filter the
                 // 1000+ item list down to the match, which then appears at the top / on-screen.
+                // 1) Switch to the "Owned" category first.
+                if (!_ownedClicked)
+                {
+                    if (!CanClick()) return;
+                    var ownedTab = FindElementByText((ExileCore.PoEMemory.Element)panel, "Owned", 0);
+                    _ownedClicked = true;
+                    if (ownedTab != null) { ClickRect(gc, ownedTab); AddLog("clicked Owned"); }
+                    else AddLog("Owned tab not found");
+                    return;
+                }
+
+                // 2) Focus the search box (switching category can steal focus).
+                if (!_searchFocused)
+                {
+                    if (!CanClick()) return;
+                    var box = FindElementContaining((ExileCore.PoEMemory.Element)panel, "select currency", 0);
+                    _searchFocused = true;
+                    if (box != null) { ClickRect(gc, box); AddLog("focused search box"); }
+                    else AddLog("search box not found");
+                    return;
+                }
+
+                // 3) Type the filter one key at a time with a real delay so keys don't drop.
                 if (!_ownedFilter)
                 {
-                    // Type the search filter one key per tick (the box is auto-focused). A rapid
-                    // burst only registers the first key, so gate one character at a time.
                     if (_searchIndex < _searchText.Length)
                     {
+                        if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return;
                         if (!BotInput.CanAct) return;
                         var k = CharToKey(_searchText[_searchIndex]);
                         if (k != System.Windows.Forms.Keys.None) BotInput.PressKey(k);
+                        _lastTypeAt = DateTime.Now;
                         if (_searchIndex == 0) AddLog($"typing '{_searchText}'");
                         _searchIndex++;
                         return;
@@ -388,6 +417,8 @@ namespace AutoExile.Systems
             _lockedHave = false;
             _searchText = SearchPrefix(_current);
             _searchIndex = 0;
+            _ownedClicked = false;
+            _searchFocused = false;
             SetState(SellState.PickingHave);
         }
 
@@ -543,6 +574,26 @@ namespace AutoExile.Systems
             foreach (var entity in gc.EntityListWrapper.OnlyValidEntities)
                 if (entity.Path?.Contains(FaustusPath, StringComparison.OrdinalIgnoreCase) == true)
                     return entity;
+            return null;
+        }
+
+        // Recursively find the first element whose normalized text contains 'needle'.
+        private static ExileCore.PoEMemory.Element FindElementContaining(ExileCore.PoEMemory.Element root, string needle, int depth)
+        {
+            if (root == null || depth > 16) return null;
+            try
+            {
+                var t = root.Text;
+                if (!string.IsNullOrEmpty(t) && Norm(t).Contains(Norm(needle))) return root;
+                var kids = root.Children;
+                if (kids != null)
+                    for (int i = 0; i < kids.Count; i++)
+                    {
+                        var f = FindElementContaining(kids[i], needle, depth + 1);
+                        if (f != null) return f;
+                    }
+            }
+            catch { }
             return null;
         }
 
