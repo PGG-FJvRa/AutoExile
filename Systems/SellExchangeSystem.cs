@@ -52,6 +52,7 @@ namespace AutoExile.Systems
         private int _searchIndex;
         private bool _ownedClicked;
         private bool _searchFocused;
+        private bool _searchCleared;
         private DateTime _lastTypeAt = DateTime.MinValue;
         private const int TypeIntervalMs = 280;
         private bool _amountFocused;
@@ -259,6 +260,7 @@ namespace AutoExile.Systems
             _searchIndex = 0;
             _ownedClicked = false;
             _searchFocused = false;
+            _searchCleared = false;
             _amountFocused = false;
             _amountCleared = false;
             _amountText = _currentQty.ToString();
@@ -299,14 +301,51 @@ namespace AutoExile.Systems
                     return;
                 }
 
-                // 2) Click the target's on-screen cell within the picker grid — no typing, so no
-                // risk of keys leaking to the game. The topmost on-screen match is the Owned cell
-                // (searching the picker subtree excludes the panel's I-Have slot label).
+                // 2) Focus the search box (its "Select currency" placeholder). SAFETY: never type
+                // unless it was found+clicked — otherwise keys leak to the game (movement/skills).
+                if (!_searchFocused)
+                {
+                    if (!CanClick()) return;
+                    var box = FindElementContaining((ExileCore.PoEMemory.Element)panel, "select currency", 0);
+                    if (box == null) { Status = "Sell: search box not found — waiting (not typing)"; return; }
+                    ClickRect(gc, box);
+                    _searchFocused = true;
+                    AddLog("focused search box");
+                    return;
+                }
+
+                // 3) Select-all to clear any leftover text, then type the name one key at a time.
+                if (!_ownedFilter)
+                {
+                    if (!_searchCleared)
+                    {
+                        if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return;
+                        BotInput.SelectAll();
+                        _searchCleared = true;
+                        _lastTypeAt = DateTime.Now;
+                        return;
+                    }
+                    if (_searchIndex < _searchText.Length)
+                    {
+                        if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return;
+                        if (!BotInput.CanAct) return;
+                        var k = CharToKey(_searchText[_searchIndex]);
+                        if (k != System.Windows.Forms.Keys.None) BotInput.PressKey(k);
+                        _lastTypeAt = DateTime.Now;
+                        if (_searchIndex == 0) AddLog($"typing '{_searchText}'");
+                        _searchIndex++;
+                        return;
+                    }
+                    _ownedFilter = true;         // filter typed
+                    _lastClickAt = DateTime.Now; // settle for the list to filter
+                    return;
+                }
+
+                // 4) Click the filtered result — topmost on-screen match in the picker grid.
                 var cell = FindTopmostVisible((ExileCore.PoEMemory.Element)picker, _current, 100f, 2000f, 0);
-                if (cell == null) { Status = $"Sell: {_current} not visible in Owned view"; return; }
+                if (cell == null) { Status = $"Sell: {_current} not visible after filter"; return; }
                 if (!CanClick()) return;
-                var orect = cell.GetClientRect();
-                AddLog($"have {_current} y={orect.Y:F0}");
+                AddLog($"have {_current} y={cell.GetClientRect().Y:F0}");
                 ClickRect(gc, cell);
                 _havePicked = true;
                 Status = $"Sell: selected I Have = {_current}";
@@ -445,6 +484,7 @@ namespace AutoExile.Systems
             _searchIndex = 0;
             _ownedClicked = false;
             _searchFocused = false;
+            _searchCleared = false;
             _amountFocused = false;
             _amountCleared = false;
             _amountText = _currentQty.ToString();
