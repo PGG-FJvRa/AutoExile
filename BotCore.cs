@@ -49,22 +49,6 @@ namespace AutoExile
         private EldritchAltarHandler _altarHandler = new();
         private NinjaPriceService _ninjaPrice = new();
 
-        // ── Currency-exchange sell scan (Phase 1: read-only dry run) ──
-        private bool _sellScanStarted;
-        private bool _sellScanDone;
-        private bool _stashWasOpen;
-        private readonly List<string> _sellCandidateLines = new();
-        private const double SellThresholdChaos = 50.0;
-        private static readonly HashSet<string> _sellExclusions = new(StringComparer.OrdinalIgnoreCase)
-        { "Divine Orb", "Stacked Deck", "Scroll of Wisdom", "Portal Scroll", "Chaos Orb" };
-        private static readonly NinjaPriceCategory[] _exchangeEligibleCats =
-        {
-            NinjaPriceCategory.Currency, NinjaPriceCategory.Fragment, NinjaPriceCategory.Scarab,
-            NinjaPriceCategory.Essence, NinjaPriceCategory.Oil, NinjaPriceCategory.Fossil,
-            NinjaPriceCategory.Resonator, NinjaPriceCategory.DeliriumOrb, NinjaPriceCategory.Artifact,
-            NinjaPriceCategory.Omen, NinjaPriceCategory.KalguuranRune, NinjaPriceCategory.AllflameEmber,
-            NinjaPriceCategory.DjinnCoin, NinjaPriceCategory.Astrolabe,
-        };
         private RuntimeTracker _runtime = new();
         private EntityCache _entityCache = new();
         private ThreatMap _threatMap = new();
@@ -728,12 +712,6 @@ namespace AutoExile
                 ?? "",
                 _navigation, _interaction, _loot, _threat);
 
-            // Currency-exchange sell scan via stash-walk — DISABLED. Can't align tab indices across
-            // folders/unavailable tabs, and can't read special tabs (Currency/Ess/Frag/Oil/…) where
-            // the sellable currency actually lives. Pivoting to the exchange "I Have" picker as the
-            // holdings source instead. Method kept for reference.
-            // TickSellScan();
-
             // Rising edge of Running (Insert hotkey or dashboard Start): restart one-shot modes so
             // they run again on Start instead of sitting idle after their first completed run.
             if (Settings.Running.Value && !_prevRunning)
@@ -869,125 +847,15 @@ namespace AutoExile
             }
             Graphics.DrawText(runtimeText, new Vector2(100, 96), runtimeColor);
 
-            // Sell mode status + step log (shows exactly where the sell run goes).
+            // Minimal sell-mode status line.
             if (_mode is SellMode sellMode)
-            {
                 Graphics.DrawText($"SELL: {sellMode.Status}", new Vector2(100, 140), SharpDX.Color.Gold);
-                float ly = 156f;
-                foreach (var l in sellMode.Log)
-                {
-                    Graphics.DrawText(l, new Vector2(100, ly), SharpDX.Color.White);
-                    ly += 14f;
-                }
-            }
 
             // Human recorder indicator
             if (_humanRecorder.IsRecording)
             {
                 var recText = $"REC  {_humanRecorder.TicksRecorded} ticks";
                 Graphics.DrawText(recText, new Vector2(100, 116), SharpDX.Color.Red);
-            }
-
-            // Debug (while PAUSED): list nearby friendly, living, non-hostile entities so we can
-            // confirm which minions + the mercenary the bot can see/target for Flame Link linking.
-            // Stand next to your minions in the hideout and pause (Insert) to read this.
-            if (!running && GameController?.Player != null)
-            {
-                var pPos = GameController.Player.GridPosNum;
-                float dy = 160f;
-                Graphics.DrawText("-- Friendly entities near you (paused) --", new Vector2(100, dy), SharpDX.Color.Cyan);
-                dy += 18f;
-                var frows = new List<(float dist, string line)>();
-                foreach (var e in GameController.EntityListWrapper.OnlyValidEntities)
-                {
-                    if (e == null || e.Id == GameController.Player.Id || e.IsHostile) continue;
-                    var life = e.GetComponent<ExileCore.PoEMemory.Components.Life>();
-                    if (life == null || life.CurHP <= 0) continue; // living allies only (minions, merc, AG, NPCs)
-                    var d = Vector2.Distance(e.GridPosNum, pPos);
-                    if (d > 70f) continue;
-                    var nm = string.IsNullOrEmpty(e.RenderName) ? "(no name)" : e.RenderName;
-                    var meta = e.Metadata ?? "";
-                    var slash = meta.LastIndexOf('/');
-                    var metaTail = slash > 0 && slash < meta.Length - 1 ? meta.Substring(slash + 1) : meta;
-                    frows.Add((d, $"{e.Type} | {nm} [{metaTail}] d={d:F0}"));
-                }
-                frows.Sort((a, b) => a.dist.CompareTo(b.dist));
-                int shown = 0;
-                foreach (var r in frows)
-                {
-                    if (shown++ >= 16) break;
-                    Graphics.DrawText(r.line, new Vector2(100, dy), SharpDX.Color.White);
-                    dy += 16f;
-                }
-                if (frows.Count == 0)
-                    Graphics.DrawText("(none within 70 - stand next to your minions)", new Vector2(100, dy), SharpDX.Color.Gray);
-            }
-
-            // Debug: when the Currency Exchange panel is open, dump every text-bearing element
-            // (index path + text) so we can find where the recommended rate lives before building
-            // a sell flow. Drawn top-right so it doesn't overlap the friendly-entity list.
-            try
-            {
-                var cxPanel = GameController?.IngameState?.IngameUi?.CurrencyExchangePanel;
-                if (cxPanel != null && cxPanel.IsVisible)
-                {
-                    var cxLines = new List<string>();
-                    DumpElementText(cxPanel, "", cxLines, 0);
-                    float ex = 620f, ey = 80f;
-                    Graphics.DrawText("-- CurrencyExchangePanel text dump --", new Vector2(ex, ey), SharpDX.Color.Orange);
-                    ey += 16f;
-                    int cn = 0;
-                    foreach (var cl in cxLines)
-                    {
-                        if (cn++ >= 45) break;
-                        Graphics.DrawText(cl, new Vector2(ex, ey), SharpDX.Color.White);
-                        ey += 14f;
-                    }
-
-                    // Compute + show the real sell candidates from the open "I Have" picker (dry run).
-                    try
-                    {
-                        dynamic picker = cxPanel.CurrencyPicker;
-                        if (picker != null && picker.IsVisible)
-                        {
-                            BuildSellCandidatesFromPicker(picker);
-                            float px = 20f, py = 250f;
-                            int k = 0;
-                            foreach (var line in _sellCandidateLines)
-                            {
-                                if (k++ >= 32) break;
-                                Graphics.DrawText(line, new Vector2(px, py), k == 1 ? SharpDX.Color.Gold : SharpDX.Color.Yellow);
-                                py += 15f;
-                            }
-                        }
-                    }
-                    catch { }
-                }
-            }
-            catch { }
-
-            // Sell-scan dry-run overlay (left side, below the friendly-entity list)
-            if (!running && (_sellCandidateLines.Count > 0 || _stashIndex.IsRunning) &&
-                GameController?.IngameState?.IngameUi?.StashElement?.IsVisible == true)
-            {
-                float sx = 100f, sy = 360f;
-                Graphics.DrawText("-- Currency-exchange sell candidates (dry run) --", new Vector2(sx, sy), SharpDX.Color.Gold);
-                sy += 16f;
-                if (_stashIndex.IsRunning)
-                {
-                    Graphics.DrawText(_stashIndex.Status, new Vector2(sx, sy), SharpDX.Color.Gray);
-                }
-                else
-                {
-                    int shown = 0;
-                    foreach (var line in _sellCandidateLines)
-                    {
-                        if (shown++ >= 32) break;
-                        Graphics.DrawText(line, new Vector2(sx, sy), SharpDX.Color.Yellow);
-                        sy += 15f;
-                        if (sy > 950f) break;
-                    }
-                }
             }
 
             // Loot tracker overlay (top-right area)
@@ -1903,156 +1771,6 @@ namespace AutoExile
             _linkBurstActive = true;
             _linkArmedAt = DateTime.Now;
             _linkCastThisBurst.Clear();
-        }
-
-        // Debug helper: recursively collect (index-path : text) for every text-bearing element,
-        // used to locate the recommended rate inside the Currency Exchange panel.
-        private static void DumpElementText(ExileCore.PoEMemory.Element e, string path, List<string> outLines, int depth)
-        {
-            if (e == null || depth > 10 || outLines.Count > 60) return;
-            try
-            {
-                var t = e.Text;
-                if (!string.IsNullOrWhiteSpace(t))
-                    outLines.Add($"{(path.Length == 0 ? "root" : path)}: {t}");
-                var kids = e.Children;
-                if (kids != null)
-                {
-                    for (int i = 0; i < kids.Count; i++)
-                        DumpElementText(kids[i], path.Length == 0 ? i.ToString() : path + "/" + i, outLines, depth + 1);
-                }
-            }
-            catch { }
-        }
-
-        // ── Currency-exchange sell scan (Phase 1: read-only dry run) ──
-        // While paused with the stash open, walk every tab once and list the stacks that WOULD be
-        // sold for Chaos (whole-stack value >= threshold, exchange-eligible currency type, not on
-        // the exclusion list). Places NO orders — this only validates the selection.
-        private void TickSellScan()
-        {
-            if (Settings.Running) return;
-            var gc = GameController;
-            if (gc == null || !gc.InGame) return;
-            var stashOpen = gc.IngameState?.IngameUi?.StashElement?.IsVisible == true;
-
-            if (stashOpen != _stashWasOpen)
-            {
-                _stashWasOpen = stashOpen;
-                if (stashOpen) { _sellScanStarted = false; _sellScanDone = false; _sellCandidateLines.Clear(); }
-                else { _stashIndex.Reset(); }
-            }
-
-            if (!stashOpen || _sellScanDone || !_ninjaPrice.IsLoaded) return;
-
-            if (!_sellScanStarted) { _stashIndex.Start(); _sellScanStarted = true; }
-            _stashIndex.Tick(gc);
-            if (!_stashIndex.IsComplete) return;
-
-            BuildSellCandidates();
-            _sellScanDone = true;
-        }
-
-        private void BuildSellCandidates()
-        {
-            _sellCandidateLines.Clear();
-            var agg = new Dictionary<string, (int stack, double unit)>(StringComparer.OrdinalIgnoreCase);
-            foreach (var tab in _stashIndex.Tabs)
-            {
-                foreach (var it in tab.Items)
-                {
-                    var name = it.BaseName;
-                    if (string.IsNullOrEmpty(name) || _sellExclusions.Contains(name)) continue;
-                    double unit = UnitChaos(name);
-                    if (unit <= 0.0) continue;
-                    if (agg.TryGetValue(name, out var cur))
-                        agg[name] = (cur.stack + it.Stack, unit);
-                    else
-                        agg[name] = (it.Stack, unit);
-                }
-            }
-
-            var rows = new List<(string name, int stack, double unit, double total)>();
-            foreach (var kv in agg)
-            {
-                double total = kv.Value.stack * kv.Value.unit;
-                if (total >= SellThresholdChaos)
-                    rows.Add((kv.Key, kv.Value.stack, kv.Value.unit, total));
-            }
-            rows.Sort((a, b) => b.total.CompareTo(a.total));
-
-            double grand = 0;
-            foreach (var r in rows) grand += r.total;
-            _sellCandidateLines.Add($"WOULD SELL {rows.Count} stacks  (~{grand:F0}c total)  [dry run]");
-            foreach (var r in rows)
-                _sellCandidateLines.Add($"{r.name}  x{r.stack}  @{r.unit:F1}c  = {r.total:F0}c");
-        }
-
-        private double UnitChaos(string name)
-        {
-            foreach (var cat in _exchangeEligibleCats)
-            {
-                var pr = _ninjaPrice.GetPrice(name, cat);
-                if (pr.MaxChaosValue > 0.0) return pr.MaxChaosValue;
-            }
-            return 0.0;
-        }
-
-        // Build the sell-candidate list from the exchange's "I Have" picker: each option's owned
-        // quantity (element child 1/0) x ninja unit chaos, kept when the whole-stack value >= the
-        // threshold and the base isn't excluded. Read-only (dry run).
-        private void BuildSellCandidatesFromPicker(dynamic picker)
-        {
-            _sellCandidateLines.Clear();
-
-            // Exclusions come from the editable "Sell Exclusions" dashboard field.
-            var excl = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var e in (Settings.Build.SellExclusions.Value ?? "")
-                     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                excl.Add(e);
-
-            var rows = new List<(string name, int qty, double unit, double total)>();
-            try
-            {
-                foreach (var opt in picker.Options)
-                {
-                    string name = null;
-                    try { name = (string)opt.ItemType.BaseName; } catch { }
-                    if (string.IsNullOrEmpty(name) || excl.Contains(name)) continue;
-                    int qty = ReadPickerQty((ExileCore.PoEMemory.Element)opt);
-                    if (qty <= 0) continue;
-                    double unit = UnitChaos(name);
-                    if (unit <= 0.0) continue;
-                    double total = qty * unit;
-                    if (total >= SellThresholdChaos)
-                        rows.Add((name, qty, unit, total));
-                }
-            }
-            catch { }
-
-            rows.Sort((a, b) => b.total.CompareTo(a.total));
-            double grand = 0; foreach (var r in rows) grand += r.total;
-            double cpd = _ninjaPrice.ChaosPerDivine;
-            string divStr = cpd > 0 ? $"  (~{grand / cpd:F1} div)" : "";
-            _sellCandidateLines.Add($"TOTAL IF SOLD: {grand:F0}c{divStr}  -  {rows.Count} stacks over {SellThresholdChaos:F0}c  [dry run]");
-            foreach (var r in rows)
-                _sellCandidateLines.Add($"{r.name}  x{r.qty}  @{r.unit:F2}c  = {r.total:F0}c");
-        }
-
-        private static int ReadPickerQty(ExileCore.PoEMemory.Element opt)
-        {
-            try { return ParseAbbrevInt(opt.GetChildAtIndex(1)?.GetChildAtIndex(0)?.Text); }
-            catch { return 0; }
-        }
-
-        private static int ParseAbbrevInt(string s)
-        {
-            if (string.IsNullOrWhiteSpace(s)) return 0;
-            s = s.Trim().Replace(",", "");
-            double mult = 1;
-            if (s.EndsWith("K", StringComparison.OrdinalIgnoreCase)) { mult = 1000; s = s[..^1]; }
-            else if (s.EndsWith("M", StringComparison.OrdinalIgnoreCase)) { mult = 1_000_000; s = s[..^1]; }
-            return double.TryParse(s, out var v) ? (int)(v * mult) : 0;
         }
 
         private bool HandleInterrupts()
