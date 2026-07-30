@@ -63,6 +63,7 @@ namespace AutoExile.Systems
         private bool _wantFocused;
         private bool _wantCleared;
         private bool _wantTyped;
+        private bool _wantFinalized;
 
         public bool IsBusy => _state != SellState.Idle;
         public string Status { get; private set; } = "";
@@ -272,6 +273,7 @@ namespace AutoExile.Systems
             _wantFocused = false;
             _wantCleared = false;
             _wantTyped = false;
+            _wantFinalized = false;
             Status = $"Sell: queued {added}/{optCount}; first = {_current}";
             SetState(SellState.PickingHave);
         }
@@ -495,8 +497,18 @@ namespace AutoExile.Systems
                 AddLog("typed 0 into I-Want");
                 return;
             }
-            // Give the exchange a moment to recompute the ratio before placing.
+            // Give the exchange a moment to recompute the ratio.
             if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < 500) return;
+
+            // Click the Chaos amount box once more to finalize the sell amount before placing.
+            if (!_wantFinalized)
+            {
+                if (!CanClick()) return;
+                ClickChildSingle(gc, panel, 5);
+                _wantFinalized = true;
+                AddLog("finalized Chaos amount");
+                return;
+            }
             SetState(SellState.PlacingOrder);
         }
 
@@ -536,6 +548,7 @@ namespace AutoExile.Systems
             _wantFocused = false;
             _wantCleared = false;
             _wantTyped = false;
+            _wantFinalized = false;
             SetState(SellState.PickingHave);
         }
 
