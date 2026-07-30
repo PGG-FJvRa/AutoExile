@@ -276,12 +276,11 @@ namespace AutoExile.Systems
                     return;
                 }
 
-                var prect = ((ExileCore.PoEMemory.Element)picker).GetClientRect();
-                var visOpt = FindVisibleByText((ExileCore.PoEMemory.Element)panel, _current, prect.Y, prect.Y + prect.Height, 0);
-                if (visOpt == null) { Status = $"Sell: {_current} not visible in Owned view"; return; }
+                var visOpt = FindVisibleByText((ExileCore.PoEMemory.Element)panel, _current, 0f, 3000f, 0);
+                if (visOpt == null) { Status = $"Sell: {_current} not visible"; return; }
                 if (!CanClick()) return;
                 var orect = visOpt.GetClientRect();
-                AddLog($"have {_current} visY={orect.Y:F0} (pick {prect.Y:F0}-{prect.Y + prect.Height:F0})");
+                AddLog($"have {_current} visY={orect.Y:F0}");
                 ClickRect(gc, visOpt);
                 _havePicked = true;
                 Status = $"Sell: selected I Have = {_current}";
@@ -398,19 +397,14 @@ namespace AutoExile.Systems
         // the visible [minY, maxY] band — i.e. the on-screen picker cell, not an off-screen data row.
         private static ExileCore.PoEMemory.Element FindVisibleByText(ExileCore.PoEMemory.Element root, string name, float minY, float maxY, int depth)
         {
-            if (root == null || depth > 14) return null;
+            if (root == null || depth > 16) return null;
             try
             {
                 var t = root.Text;
-                if (!string.IsNullOrEmpty(t))
+                if (!string.IsNullOrEmpty(t) && Norm(t).Contains(Norm(name)))
                 {
-                    var norm = t.Replace('\n', ' ').Replace('\r', ' ');
-                    while (norm.Contains("  ")) norm = norm.Replace("  ", " ");
-                    if (norm.Trim().IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        var r = root.GetClientRect();
-                        if (r.Y >= minY - 5 && r.Y <= maxY) return root;
-                    }
+                    var r = root.GetClientRect();
+                    if (r.Y >= minY && r.Y <= maxY) return root;
                 }
                 var kids = root.Children;
                 if (kids != null)
@@ -422,6 +416,21 @@ namespace AutoExile.Systems
             }
             catch { }
             return null;
+        }
+
+        // Lowercase, keep letters/digits, collapse whitespace, drop punctuation (apostrophes etc.)
+        // so "Dead Man's\nSulphur" and "Dead Man's Sulphur" compare equal.
+        private static string Norm(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            var sb = new System.Text.StringBuilder();
+            bool lastSpace = true;
+            foreach (var c in s)
+            {
+                if (char.IsLetterOrDigit(c)) { sb.Append(char.ToLowerInvariant(c)); lastSpace = false; }
+                else if (char.IsWhiteSpace(c)) { if (!lastSpace) { sb.Append(' '); lastSpace = true; } }
+            }
+            return sb.ToString().Trim();
         }
 
         private void ClickChild(GameController gc, dynamic panel, int i, int j)
