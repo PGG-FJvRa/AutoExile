@@ -518,15 +518,21 @@ namespace AutoExile.Systems
                 { Status = "Sell: waiting I Want picker close"; return; }
 
                 string wantName = SelectedWantName(panel);
-                if (IsChaos(wantName))
+                if (!IsDefinitelyWrongWant(wantName))
                 {
-                    AddLog($"verified I-Want = '{wantName}'");
+                    // Chaos confirmed, OR the I-Want label was unreadable. Only a DEFINITELY-wrong
+                    // (readable, non-Chaos) name blocks us — otherwise we trust the pick (the picker
+                    // cell we clicked was a verified on-screen "Chaos Orb" match). This keeps a
+                    // possibly-mismapped label element from skipping every single item ("0 orders").
+                    AddLog(IsChaos(wantName)
+                        ? $"verified I-Want = '{wantName}'"
+                        : $"I-Want label unreadable ('{wantName}') — trusting Chaos cell pick");
                     SetState(SellState.LockingAmounts);
                     return;
                 }
 
-                // Wrong currency locked in. Re-open + re-select a few times; if it still won't take,
-                // SKIP this candidate rather than place a bad trade.
+                // A different, readable currency is locked in. Re-open + re-select a few times; if it
+                // still won't take, SKIP this candidate rather than place a bad trade.
                 _wantVerifyAttempts++;
                 AddLog($"I-Want WRONG ('{wantName}') try {_wantVerifyAttempts}");
                 if (_wantVerifyAttempts >= 3)
@@ -694,10 +700,11 @@ namespace AutoExile.Systems
             var panel = gc.IngameState.IngameUi.CurrencyExchangePanel;
             if (panel == null || !panel.IsVisible) { Status = "Sell: panel closed"; Cancel(gc, ctx.Navigation); return; }
 
-            // FINAL SAFETY NET: never place unless the locked-in I-Want is Chaos. Belt-and-suspenders
-            // over the PickingWant verify — guards against anything changing the I-Want in between.
+            // FINAL SAFETY NET: never place when a DEFINITELY-wrong (readable, non-Chaos) currency is
+            // locked in. Belt-and-suspenders over the PickingWant verify. An unreadable label doesn't
+            // block placement (see PickingWant) — only a positively-wrong name does.
             string wantName = SelectedWantName(panel);
-            if (!IsChaos(wantName))
+            if (IsDefinitelyWrongWant(wantName))
             {
                 AddLog($"ABORT place {_current}: I-Want '{wantName}' != Chaos");
                 Status = $"Sell: aborted place ({_current}) — I-Want != Chaos";
@@ -856,6 +863,11 @@ namespace AutoExile.Systems
 
         private static bool IsChaos(string name)
             => !string.IsNullOrWhiteSpace(name) && Norm(name).Contains(Norm(WantCurrencyBaseName));
+
+        // A readable name that is NOT Chaos. Empty/unreadable returns false (unknown ≠ wrong) so a
+        // label we can't read never blocks a sale — only a positively-different currency does.
+        private static bool IsDefinitelyWrongWant(string name)
+            => !string.IsNullOrWhiteSpace(name) && !Norm(name).Contains(Norm(WantCurrencyBaseName));
 
         // Abandon the current candidate without placing (wrong I-Want, etc.). Route through the
         // builder-clear so any leftover amounts are emptied, then advance to the next candidate.

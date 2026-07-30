@@ -17,7 +17,9 @@ namespace AutoExile.Modes
         public string Name => "Sell";
 
         public string Status => _done
-            ? $"Sell complete — {_sell.OrdersPlaced} orders placed (Insert to stop)"
+            ? (_sell.OrdersPlaced > 0
+                ? $"Sell complete — {_sell.OrdersPlaced} orders placed (Insert to stop)"
+                : $"Sell done, 0 placed — last: {_sell.Status} (Insert to stop)")
             : (_started ? _sell.Status : "Sell: starting…");
 
         public IReadOnlyList<string> Log => _sell.Log;
