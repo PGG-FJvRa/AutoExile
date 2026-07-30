@@ -57,6 +57,8 @@ namespace AutoExile.Systems
         private bool _searchCleared;
         private bool _searchEmptied;
         private int _searchRetries;
+        private Vector2 _searchBoxPos;      // cached on-screen search-box position (persists across items)
+        private bool _haveSearchBoxPos;
         private DateTime _lastTypeAt = DateTime.MinValue;
         private const int TypeIntervalMs = 380;
         private bool _amountFocused;
@@ -97,6 +99,7 @@ namespace AutoExile.Systems
             _exclusions = exclusions ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             _havePicked = false;
             _wantPicked = false;
+            _haveSearchBoxPos = false;
             _log.Clear();
             AddLog($"start (max={_maxOrders}, thr={_thresholdChaos:F0}c)");
             SetState(SellState.WalkingToFaustus);
@@ -346,12 +349,32 @@ namespace AutoExile.Systems
                 if (!_searchFocused)
                 {
                     if (!CanClick()) return;
-                    // The search box is panel child 15 (holds the "Select currency" placeholder when
-                    // empty). Click it by index — works regardless of any leftover text. Prefer the
-                    // placeholder element when present (most precise), else fall back to child 15.
+                    // Find and click the search box to focus it. When empty it holds the "Select
+                    // currency" placeholder (precise — and we cache its on-screen position). Once it
+                    // has text the placeholder is gone, so on later items we click the cached spot.
+                    // NEVER fall back to a guessed child index: child 15 is the gold-value display,
+                    // not the search box, so clicking+typing there leaks the name into the game.
                     var box = FindElementContaining((ExileCore.PoEMemory.Element)panel, "select currency", 0);
-                    if (box != null) { ClickRect(gc, box); AddLog("focus search (placeholder)"); }
-                    else { ClickChildSingle(gc, panel, 15); AddLog($"focus search (child15='{SafeChildText(panel, 15)}')"); }
+                    if (box != null)
+                    {
+                        var r = box.GetClientRect();
+                        _searchBoxPos = new Vector2(r.X + r.Width / 2f, r.Y + r.Height / 2f);
+                        _haveSearchBoxPos = true;
+                        ClickClientPos(gc, _searchBoxPos);
+                        AddLog("focus search (placeholder)");
+                    }
+                    else if (_haveSearchBoxPos)
+                    {
+                        ClickClientPos(gc, _searchBoxPos);
+                        AddLog($"focus search (cached {_searchBoxPos.X:F0},{_searchBoxPos.Y:F0})");
+                    }
+                    else
+                    {
+                        AddLog("search box not found — aborting (no leak)");
+                        Status = "Sell: search box not found";
+                        Cancel(gc, ctx.Navigation);
+                        return;
+                    }
                     _searchFocused = true;
                     _searchFocusedAt = DateTime.Now;
                     return;
@@ -365,7 +388,7 @@ namespace AutoExile.Systems
                         // Wait after focusing so the search box reliably keeps focus.
                         if ((DateTime.Now - _searchFocusedAt).TotalMilliseconds < 1600)
                         { Status = "Sell: settling on search box"; return; }
-                        AddLog($"clear search (box='{SafeChildText(panel, 15)}')");
+                        AddLog("clear search (select-all + delete)");
                         BotInput.SelectAll();
                         _searchCleared = true;
                         _lastTypeAt = DateTime.Now;
@@ -869,6 +892,14 @@ namespace AutoExile.Systems
                 BotInput.Click(ToAbsolutePos(gc, center));
                 _lastClickAt = DateTime.Now;
             }
+            catch { }
+        }
+
+        // Click a cached client-space position (used to re-focus the search box on later items, when
+        // its "Select currency" placeholder is gone and there's no element to locate it by).
+        private void ClickClientPos(GameController gc, Vector2 clientPos)
+        {
+            try { BotInput.Click(ToAbsolutePos(gc, clientPos)); _lastClickAt = DateTime.Now; }
             catch { }
         }
 
