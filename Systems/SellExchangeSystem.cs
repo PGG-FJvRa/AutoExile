@@ -518,9 +518,13 @@ namespace AutoExile.Systems
             var gc = ctx.Game;
             var panel = gc.IngameState.IngameUi.CurrencyExchangePanel;
             if (panel == null || !panel.IsVisible) { Status = "Sell: panel closed"; Cancel(gc, ctx.Navigation); return; }
+            // Give Place Order a moment to enable after finalizing the amount.
+            if ((DateTime.Now - _stateEnteredAt).TotalMilliseconds < 600) return;
             if (!CanClick()) return;
 
-            // Amount is now set to the full stack; rate is the exchange's market fill. Place it.
+            string pbtn = "?";
+            try { var e = panel.GetChildAtIndex(16)?.GetChildAtIndex(0); pbtn = e == null ? "" : (string)e.Text ?? ""; } catch { }
+            AddLog($"place c16/0='{pbtn}'");
             ClickChild(gc, panel, 16, 0); // place order
             _ordersPlaced++;
             AddLog($"placed #{_ordersPlaced} {_current}");
