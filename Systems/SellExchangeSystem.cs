@@ -250,7 +250,9 @@ namespace AutoExile.Systems
 
             if (_havePicked)
             {
-                if (picker != null && picker.IsVisible) { Status = "Sell: waiting I Have picker close"; return; }
+                // Proceed after a short wait even if the picker lingers open (don't hang).
+                if (picker != null && picker.IsVisible && (DateTime.Now - _lastClickAt).TotalMilliseconds < 2000)
+                { Status = "Sell: waiting I Have picker close"; return; }
                 SetState(SellState.PickingWant); return;
             }
 
@@ -259,6 +261,9 @@ namespace AutoExile.Systems
                 var option = FindPickerOption(picker, null, _current);
                 if (option == null) { Status = $"Sell: {_current} not in I Have picker"; return; }
                 if (!CanClick()) return;
+                var orect = option.GetClientRect();
+                var prect = picker.GetClientRect();
+                AddLog($"have {_current} oY={orect.Y:F0}-{orect.Y + orect.Height:F0} pickY={prect.Y:F0}-{prect.Y + prect.Height:F0}");
                 ClickRect(gc, option);
                 _havePicked = true;
                 Status = $"Sell: selected I Have = {_current}";
