@@ -52,6 +52,7 @@ namespace AutoExile.Systems
         private int _searchIndex;
         private bool _ownedClicked;
         private bool _searchFocused;
+        private DateTime _searchFocusedAt;
         private bool _searchCleared;
         private DateTime _lastTypeAt = DateTime.MinValue;
         private const int TypeIntervalMs = 280;
@@ -329,7 +330,7 @@ namespace AutoExile.Systems
                         AddLog($"focus search (pos {pos.X:F0},{pos.Y:F0})");
                     }
                     _searchFocused = true;
-                    _lastTypeAt = DateTime.Now; // settle before select-all/typing
+                    _searchFocusedAt = DateTime.Now;
                     return;
                 }
 
@@ -338,7 +339,9 @@ namespace AutoExile.Systems
                 {
                     if (!_searchCleared)
                     {
-                        if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return;
+                        // Wait a full second after focusing so the search box keeps focus.
+                        if ((DateTime.Now - _searchFocusedAt).TotalMilliseconds < 1000)
+                        { Status = "Sell: settling on search box"; return; }
                         BotInput.SelectAll();
                         _searchCleared = true;
                         _lastTypeAt = DateTime.Now;
