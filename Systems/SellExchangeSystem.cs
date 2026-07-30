@@ -59,8 +59,17 @@ namespace AutoExile.Systems
         private int _searchRetries;
         private Vector2 _searchBoxPos;      // cached on-screen search-box position (persists across items)
         private bool _haveSearchBoxPos;
+        private bool _ownedSettled;                             // Owned grid finished (re)rendering
+        private int _ownedPrevOptCount = -1;                   // last option count seen while settling
+        private DateTime _ownedStabilityCheckAt = DateTime.MinValue;
+        private DateTime _ownedFilterAt = DateTime.MinValue;   // when the full search filter finished typing
+        private int _searchAttempts;                           // focus+type retries for the current candidate
         private DateTime _lastTypeAt = DateTime.MinValue;
         private const int TypeIntervalMs = 380;
+        private const int OwnedSettleMinMs = 900;   // never focus earlier than the old proven floor (grid still rendering)
+        private const int OwnedSettleMaxMs = 2500;  // …but never wait longer than this for the grid to go stable
+        private const int FilterResultWaitMs = 900; // after typing, wait this long for the result cell to appear
+        private const int MaxSearchAttempts = 3;    // re-focus + retype this many times before skipping the item
         private bool _amountFocused;
         private bool _amountCleared;
         private string _amountText = "";
@@ -288,6 +297,11 @@ namespace AutoExile.Systems
             _searchRetries = 0;
             _ownedClicked = false;
             _ownedClickedAt = DateTime.MinValue;
+            _ownedSettled = false;
+            _ownedPrevOptCount = -1;
+            _ownedStabilityCheckAt = DateTime.MinValue;
+            _ownedFilterAt = DateTime.MinValue;
+            _searchAttempts = 0;
             _searchFocused = false;
             _searchCleared = false;
             _searchEmptied = false;
@@ -337,16 +351,35 @@ namespace AutoExile.Systems
                     var ownedTab = FindElementByText((ExileCore.PoEMemory.Element)panel, "Owned", 0);
                     _ownedClicked = true;
                     _ownedClickedAt = DateTime.Now;
+                    _ownedSettled = false;
+                    _ownedPrevOptCount = -1;
+                    _ownedStabilityCheckAt = DateTime.Now;
                     if (ownedTab != null) { ClickRect(gc, ownedTab); AddLog("clicked Owned"); }
                     else AddLog("Owned tab not found");
                     return;
                 }
 
-                // 1b) Let the Owned grid finish loading BEFORE focusing the search box. The tab switch
-                // kicks off an async grid re-render; if we focus + type while it's still rendering, the
-                // re-render steals focus and keys leak into the game. This settle is the key fix.
-                if ((DateTime.Now - _ownedClickedAt).TotalMilliseconds < 900)
-                { Status = "Sell: settling Owned tab"; return; }
+                // 1b) Let the Owned grid finish (re)rendering BEFORE focusing the search box. The tab
+                // switch kicks off an async grid re-render; focusing + typing mid-render lets the
+                // re-render steal focus and keys leak into the game. A FIXED delay is unreliable —
+                // at 4K the grid renders ~4x the pixels and can still be rebuilding after 900ms.
+                // Instead poll the option count until it stops changing (grid stable), bounded by a
+                // min (never focus too early) and a max (never hang).
+                if (!_ownedSettled)
+                {
+                    double sinceOwned = (DateTime.Now - _ownedClickedAt).TotalMilliseconds;
+                    if (sinceOwned < OwnedSettleMinMs) { Status = "Sell: settling Owned grid"; return; }
+                    if (sinceOwned > OwnedSettleMaxMs) { _ownedSettled = true; AddLog("owned settle: timeout"); return; }
+                    if ((DateTime.Now - _ownedStabilityCheckAt).TotalMilliseconds < 180)
+                    { Status = "Sell: settling Owned grid"; return; }
+                    _ownedStabilityCheckAt = DateTime.Now;
+                    int cnt = CountOptions(picker);
+                    if (cnt > 0 && cnt == _ownedPrevOptCount)
+                    { _ownedSettled = true; AddLog($"owned settle: stable at {cnt}"); return; }
+                    _ownedPrevOptCount = cnt;
+                    Status = "Sell: settling Owned grid";
+                    return;
+                }
 
                 // 2) Focus the search box (its "Select currency" placeholder). SAFETY: never type
                 // unless it was found+clicked — otherwise keys leak to the game (movement/skills).
@@ -421,13 +454,40 @@ namespace AutoExile.Systems
                         return;
                     }
                     _ownedFilter = true;         // filter typed
+                    _ownedFilterAt = DateTime.Now;
                     _lastClickAt = DateTime.Now; // settle for the list to filter
                     return;
                 }
 
-                // 4) Click the filtered result — topmost on-screen match in the picker grid.
-                var cell = FindTopmostVisible((ExileCore.PoEMemory.Element)picker, _current, 100f, 2000f, 0);
-                if (cell == null) { Status = $"Sell: {_current} not visible after filter"; return; }
+                // 4) Click the filtered result — topmost on-screen match in the picker grid. The
+                // visible band must span the FULL window height: on a 3840x2160 screen a result cell
+                // can render below y=2000, and a hardcoded ceiling would wrongly treat it as
+                // off-screen (this alone made selection "work sometimes" at 4K).
+                float winH = gc.Window.GetWindowRectangle().Height;
+                var cell = FindTopmostVisible((ExileCore.PoEMemory.Element)picker, _current, 60f, winH - 10f, 0);
+                if (cell == null)
+                {
+                    // Result never appeared → the filter didn't take (focus was lost / keys leaked,
+                    // which varies at 4K). Give it a moment, then re-focus + retype rather than hang.
+                    if ((DateTime.Now - _ownedFilterAt).TotalMilliseconds < FilterResultWaitMs)
+                    { Status = $"Sell: waiting for {_current} to filter…"; return; }
+                    _searchAttempts++;
+                    if (_searchAttempts >= MaxSearchAttempts)
+                    {
+                        AddLog($"SKIP {_current}: search never focused ({_searchAttempts} tries)");
+                        Status = $"Sell: skipped {_current} (search focus failed)";
+                        SkipCurrentCandidate();
+                        return;
+                    }
+                    AddLog($"search retry {_searchAttempts} for {_current}");
+                    _searchFocused = false;   // re-click the box (re-acquire focus)
+                    _searchCleared = false;
+                    _searchEmptied = false;
+                    _ownedFilter = false;
+                    _searchIndex = 0;
+                    _stateEnteredAt = DateTime.Now; // give the retry a fresh state-timeout window
+                    return;
+                }
                 if (!CanClick()) return;
                 AddLog($"have {_current} y={cell.GetClientRect().Y:F0}");
                 ClickRect(gc, cell);
@@ -750,6 +810,11 @@ namespace AutoExile.Systems
             _searchRetries = 0;
             _ownedClicked = false;
             _ownedClickedAt = DateTime.MinValue;
+            _ownedSettled = false;
+            _ownedPrevOptCount = -1;
+            _ownedStabilityCheckAt = DateTime.MinValue;
+            _ownedFilterAt = DateTime.MinValue;
+            _searchAttempts = 0;
             _searchFocused = false;
             _searchCleared = false;
             _searchEmptied = false;
@@ -800,6 +865,15 @@ namespace AutoExile.Systems
             _clrHaveFocused = _clrHaveSelected = _clrHaveDone = false;
             _clrWantFocused = _clrWantSelected = _clrWantDone = false;
             SetState(SellState.ClearingBuilder);
+        }
+
+        // Count the picker's currently enumerated options. Used to detect when the Owned grid has
+        // finished (re)rendering (count goes stable) — a resolution-independent settle signal.
+        private static int CountOptions(dynamic picker)
+        {
+            int n = 0;
+            try { foreach (var _ in picker.Options) { n++; if (n > 4000) break; } } catch { }
+            return n;
         }
 
         private void SetState(SellState s) { _state = s; _stateEnteredAt = DateTime.Now; AddLog($"-> {s}"); }
