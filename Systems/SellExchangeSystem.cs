@@ -381,37 +381,42 @@ namespace AutoExile.Systems
                     return;
                 }
 
-                // 2) Focus the search box (its "Select currency" placeholder). SAFETY: never type
-                // unless it was found+clicked — otherwise keys leak to the game (movement/skills).
+                // 2) Focus the search box. It AUTO-FOCUSES when the picker opens, so its "Select
+                // currency" placeholder is usually already gone (PoE hides a focused field's
+                // placeholder) — we must NOT depend on it. Locate order: placeholder (only present
+                // while unfocused) → cached spot → GEOMETRIC (the search bar is the bottommost
+                // full-width band inside the picker). Never abort the run here.
                 if (!_searchFocused)
                 {
                     if (!CanClick()) return;
-                    // Find and click the search box to focus it. When empty it holds the "Select
-                    // currency" placeholder (precise — and we cache its on-screen position). Once it
-                    // has text the placeholder is gone, so on later items we click the cached spot.
-                    // NEVER fall back to a guessed child index: child 15 is the gold-value display,
-                    // not the search box, so clicking+typing there leaks the name into the game.
-                    var box = FindElementContaining((ExileCore.PoEMemory.Element)panel, "select currency", 0);
-                    if (box != null)
+                    var ph = FindElementContaining((ExileCore.PoEMemory.Element)panel, "select currency", 0);
+                    if (ph != null)
                     {
-                        var r = box.GetClientRect();
+                        var r = ph.GetClientRect();
                         _searchBoxPos = new Vector2(r.X + r.Width / 2f, r.Y + r.Height / 2f);
                         _haveSearchBoxPos = true;
-                        ClickClientPos(gc, _searchBoxPos);
                         AddLog("focus search (placeholder)");
                     }
-                    else if (_haveSearchBoxPos)
+                    else if (!_haveSearchBoxPos && picker != null
+                             && FindSearchBoxPos((ExileCore.PoEMemory.Element)picker, out var sp))
                     {
-                        ClickClientPos(gc, _searchBoxPos);
-                        AddLog($"focus search (cached {_searchBoxPos.X:F0},{_searchBoxPos.Y:F0})");
+                        _searchBoxPos = sp;
+                        _haveSearchBoxPos = true;
+                        AddLog($"focus search (geometric {sp.X:F0},{sp.Y:F0})");
                     }
-                    else
+
+                    if (!_haveSearchBoxPos)
                     {
-                        AddLog("search box not found — aborting (no leak)");
-                        Status = "Sell: search box not found";
-                        Cancel(gc, ctx.Navigation);
+                        // Picker rect not ready yet — retry a few times, then skip this item (never
+                        // cancel the whole run).
+                        _searchAttempts++;
+                        AddLog($"search box not locatable ({_searchAttempts})");
+                        if (_searchAttempts >= MaxSearchAttempts)
+                        { Status = $"Sell: skipped {_current} (no search box)"; SkipCurrentCandidate(); }
                         return;
                     }
+
+                    ClickClientPos(gc, _searchBoxPos);
                     _searchFocused = true;
                     _searchFocusedAt = DateTime.Now;
                     return;
@@ -886,6 +891,62 @@ namespace AutoExile.Systems
             int n = 0;
             try { foreach (var _ in picker.Options) { n++; if (n > 4000) break; } } catch { }
             return n;
+        }
+
+        // Locate the picker's search input WITHOUT its "Select currency" placeholder (which is hidden
+        // once the box is focused — and it AUTO-FOCUSES on open, so the placeholder is usually already
+        // gone). The search bar is the bottommost FULL-WIDTH, thin band inside the picker: grid cells
+        // are ~1/3 width, and grid-row containers are full-width but sit higher up, so the lowest
+        // full-width thin element is the search bar. Falls back to a geometric bottom-centre point.
+        // Only returns false if the picker rect isn't valid yet.
+        private static bool FindSearchBoxPos(ExileCore.PoEMemory.Element picker, out Vector2 pos)
+        {
+            pos = default;
+            SharpDX.RectangleF pr;
+            try { pr = picker.GetClientRect(); } catch { return false; }
+            if (pr.Width < 80 || pr.Height < 120) return false;
+
+            float minW = pr.Width * 0.55f;
+            float minH = pr.Height * 0.012f;
+            float maxH = pr.Height * 0.07f;
+            float zoneTop = pr.Y + pr.Height * 0.80f;
+
+            ExileCore.PoEMemory.Element best = null;
+            float bestY = float.MinValue;
+            ScanSearchBox(picker, pr, minW, minH, maxH, zoneTop, ref best, ref bestY, 0);
+
+            if (best != null)
+            {
+                var r = best.GetClientRect();
+                pos = new Vector2(r.X + r.Width * 0.4f, r.Y + r.Height / 2f); // left-of-centre (avoid the ✕ clear button)
+                return true;
+            }
+            // Geometric fallback: horizontal centre, just above the picker's bottom edge.
+            float dy = System.Math.Clamp(pr.Height * 0.028f, 16f, 60f);
+            pos = new Vector2(pr.X + pr.Width * 0.45f, pr.Y + pr.Height - dy);
+            return true;
+        }
+
+        private static void ScanSearchBox(ExileCore.PoEMemory.Element e, SharpDX.RectangleF pr,
+            float minW, float minH, float maxH, float zoneTop,
+            ref ExileCore.PoEMemory.Element best, ref float bestY, int depth)
+        {
+            if (e == null || depth > 16) return;
+            try
+            {
+                var r = e.GetClientRect();
+                if (r.Width >= minW && r.Height >= minH && r.Height <= maxH
+                    && r.Y >= zoneTop && r.Y + r.Height <= pr.Y + pr.Height + 6f
+                    && r.X >= pr.X - 6f && r.X + r.Width <= pr.X + pr.Width + 6f
+                    && r.Y > bestY)
+                { best = e; bestY = r.Y; }
+
+                var kids = e.Children;
+                if (kids != null)
+                    for (int i = 0; i < kids.Count; i++)
+                        ScanSearchBox(kids[i], pr, minW, minH, maxH, zoneTop, ref best, ref bestY, depth + 1);
+            }
+            catch { }
         }
 
         private void SetState(SellState s) { _state = s; _stateEnteredAt = DateTime.Now; AddLog($"-> {s}"); }
