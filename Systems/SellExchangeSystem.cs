@@ -70,6 +70,8 @@ namespace AutoExile.Systems
         private bool _wantTyped;
         private bool _wantClickedOut;
         private bool _wantFinalized;
+        private DateTime _wantPickerOpenedAt = DateTime.MinValue; // when the I-Want picker was opened (settle before clicking)
+        private int _wantVerifyAttempts;                          // re-selection tries when the locked I-Want isn't Chaos
         private int _placeAttempts;
         private int _placeSlots0 = -1;
         private DateTime _lastPlaceClickAt = DateTime.MinValue;
@@ -298,6 +300,8 @@ namespace AutoExile.Systems
             _wantTyped = false;
             _wantClickedOut = false;
             _wantFinalized = false;
+            _wantPickerOpenedAt = DateTime.MinValue;
+            _wantVerifyAttempts = 0;
             _placeAttempts = 0;
             _placeSlots0 = -1;
             _lastPlaceClickAt = DateTime.MinValue;
@@ -446,17 +450,63 @@ namespace AutoExile.Systems
 
             if (_wantPicked)
             {
+                // Wait for the I-Want picker to close, then VERIFY the locked-in currency BEFORE we
+                // ever set amounts or place an order. A stale/off-screen cell rect once landed the
+                // click on a neighbour and the order sold for Baubles — never trade for the wrong
+                // currency. The selected I-Want name is the I-Want button's label (panel child 7/0).
                 if (picker != null && picker.IsVisible && (DateTime.Now - _lastClickAt).TotalMilliseconds < 2000)
                 { Status = "Sell: waiting I Want picker close"; return; }
-                SetState(SellState.LockingAmounts); return;
+
+                string wantName = SelectedWantName(panel);
+                if (IsChaos(wantName))
+                {
+                    AddLog($"verified I-Want = '{wantName}'");
+                    SetState(SellState.LockingAmounts);
+                    return;
+                }
+
+                // Wrong currency locked in. Re-open + re-select a few times; if it still won't take,
+                // SKIP this candidate rather than place a bad trade.
+                _wantVerifyAttempts++;
+                AddLog($"I-Want WRONG ('{wantName}') try {_wantVerifyAttempts}");
+                if (_wantVerifyAttempts >= 3)
+                {
+                    AddLog($"SKIP {_current}: could not set I-Want to Chaos");
+                    Status = $"Sell: skipped {_current} (I-Want != Chaos)";
+                    SkipCurrentCandidate();
+                    return;
+                }
+                _wantPicked = false;              // fall through next tick reopens the picker
+                _wantPickerOpenedAt = DateTime.MinValue;
+                return;
             }
 
             if (picker != null && picker.IsVisible && picker.IsPickingWantedCurrency)
             {
-                var option = FindPickerOption(picker, null, WantCurrencyBaseName);
-                if (option == null) { Status = "Sell: Chaos not in I Want picker"; return; }
+                // Let the list settle so cell rects are stable — clicking a still-animating/off-screen
+                // rect is what mis-selected a neighbouring currency (the Baubles bug).
+                if ((DateTime.Now - _wantPickerOpenedAt).TotalMilliseconds < 450)
+                { Status = "Sell: settling I Want picker"; return; }
                 if (!CanClick()) return;
-                ClickRect(gc, option);
+
+                // Click Chaos as an ON-SCREEN cell (topmost visible match), not a possibly off-screen
+                // FindPickerOption rect. Fall back to the exact-BaseName option only if its rect is
+                // actually within the window.
+                float winH = gc.Window.GetWindowRectangle().Height;
+                var cell = FindTopmostVisible((ExileCore.PoEMemory.Element)picker, WantCurrencyBaseName, 80f, winH - 20f, 0);
+                if (cell == null)
+                {
+                    var option = FindPickerOption(picker, null, WantCurrencyBaseName);
+                    if (option != null)
+                    {
+                        var r = option.GetClientRect();
+                        if (r.Y >= 80f && r.Y <= winH - 20f) cell = option;
+                    }
+                }
+                if (cell == null) { Status = "Sell: Chaos not visible in I Want picker"; return; }
+
+                AddLog($"want Chaos y={cell.GetClientRect().Y:F0}");
+                ClickRect(gc, cell);
                 _wantPicked = true;
                 Status = "Sell: selected I Want = Chaos";
                 return;
@@ -464,6 +514,7 @@ namespace AutoExile.Systems
 
             if (!CanClick()) return;
             ClickChild(gc, panel, 7, 0); // I-Want button
+            _wantPickerOpenedAt = DateTime.Now;
             Status = "Sell: opening I Want picker";
         }
 
@@ -582,6 +633,18 @@ namespace AutoExile.Systems
             var gc = ctx.Game;
             var panel = gc.IngameState.IngameUi.CurrencyExchangePanel;
             if (panel == null || !panel.IsVisible) { Status = "Sell: panel closed"; Cancel(gc, ctx.Navigation); return; }
+
+            // FINAL SAFETY NET: never place unless the locked-in I-Want is Chaos. Belt-and-suspenders
+            // over the PickingWant verify — guards against anything changing the I-Want in between.
+            string wantName = SelectedWantName(panel);
+            if (!IsChaos(wantName))
+            {
+                AddLog($"ABORT place {_current}: I-Want '{wantName}' != Chaos");
+                Status = $"Sell: aborted place ({_current}) — I-Want != Chaos";
+                SkipCurrentCandidate();
+                return;
+            }
+
             // Give Place Order a moment to enable after finalizing the amount.
             if ((DateTime.Now - _stateEnteredAt).TotalMilliseconds < 600) return;
 
@@ -699,6 +762,8 @@ namespace AutoExile.Systems
             _wantTyped = false;
             _wantClickedOut = false;
             _wantFinalized = false;
+            _wantPickerOpenedAt = DateTime.MinValue;
+            _wantVerifyAttempts = 0;
             _placeAttempts = 0;
             _placeSlots0 = -1;
             _lastPlaceClickAt = DateTime.MinValue;
@@ -706,6 +771,36 @@ namespace AutoExile.Systems
         }
 
         // ── Helpers (mirror FaustusSystem) ──
+
+        // The currently selected I-Want currency name = the I-Want button's label (panel child 7/0,
+        // confirmed by the panel dump). Falls back to child 7's own (aggregated) text so a slight
+        // nesting difference can't blind the guard.
+        private static string SelectedWantName(dynamic panel)
+        {
+            try
+            {
+                var btn = panel.GetChildAtIndex(7);
+                if (btn == null) return "";
+                var lbl = btn.GetChildAtIndex(0);
+                string t0 = lbl == null ? "" : (string)lbl.Text ?? "";
+                if (!string.IsNullOrWhiteSpace(t0)) return t0;
+                return (string)btn.Text ?? "";
+            }
+            catch { return ""; }
+        }
+
+        private static bool IsChaos(string name)
+            => !string.IsNullOrWhiteSpace(name) && Norm(name).Contains(Norm(WantCurrencyBaseName));
+
+        // Abandon the current candidate without placing (wrong I-Want, etc.). Route through the
+        // builder-clear so any leftover amounts are emptied, then advance to the next candidate.
+        // _ordersPlaced is not incremented, so this is a pure skip.
+        private void SkipCurrentCandidate()
+        {
+            _clrHaveFocused = _clrHaveSelected = _clrHaveDone = false;
+            _clrWantFocused = _clrWantSelected = _clrWantDone = false;
+            SetState(SellState.ClearingBuilder);
+        }
 
         private void SetState(SellState s) { _state = s; _stateEnteredAt = DateTime.Now; AddLog($"-> {s}"); }
         private bool CanClick() => (DateTime.Now - _lastClickAt).TotalMilliseconds >= ClickCooldownMs && BotInput.CanAct;
