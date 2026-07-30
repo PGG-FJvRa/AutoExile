@@ -425,6 +425,25 @@ namespace AutoExile.Systems
                 _amountIndex++;
                 return;
             }
+
+            // Amounts entered — lock both by clicking them (Place Order stays greyed until locked).
+            if (!_lockedHave)
+            {
+                if (!CanClick()) return;
+                ClickChildSingle(gc, panel, 8);
+                _lockedHave = true;
+                Status = "Sell: locking I Have amount";
+                return;
+            }
+            if (!_lockedWant)
+            {
+                if (!CanClick()) return;
+                AddLog($"lock c5='{SafeChildText(panel, 5)}' c8='{SafeChildText(panel, 8)}'");
+                ClickChildSingle(gc, panel, 5);
+                _lockedWant = true;
+                Status = "Sell: locking I Want amount";
+                return;
+            }
             SetState(SellState.PlacingOrder);
         }
 
