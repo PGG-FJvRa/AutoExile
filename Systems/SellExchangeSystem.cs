@@ -299,14 +299,17 @@ namespace AutoExile.Systems
                     return;
                 }
 
-                // 2) Focus the search box (switching category can steal focus).
+                // 2) Focus the search box. CRITICAL: do NOT advance to typing unless the box was
+                // found and clicked — otherwise letters leak to the game (movement/skills). If it's
+                // not found we keep waiting (the state timeout aborts safely) rather than type.
                 if (!_searchFocused)
                 {
                     if (!CanClick()) return;
                     var box = FindElementContaining((ExileCore.PoEMemory.Element)panel, "select currency", 0);
+                    if (box == null) { Status = "Sell: search box not found — waiting (not typing)"; return; }
+                    ClickRect(gc, box);
                     _searchFocused = true;
-                    if (box != null) { ClickRect(gc, box); AddLog("focused search box"); }
-                    else AddLog("search box not found");
+                    AddLog("focused search box");
                     return;
                 }
 
@@ -386,7 +389,17 @@ namespace AutoExile.Systems
             if (!_amountFocused)
             {
                 if (!CanClick()) return;
-                AddLog($"amt box c8='{SafeChildText(panel, 8)}' -> {_amountText}");
+                // Confirm child 8 really is the (numeric) amount box before clicking/typing, so we
+                // never type digits into the game (number keys are flask slots!).
+                var c8 = SafeChildText(panel, 8);
+                if (!IsNumericAmount(c8))
+                {
+                    AddLog($"abort: amount box c8='{c8}' not numeric");
+                    Status = "Sell: amount box not found — aborting (not typing)";
+                    Cancel(gc, ctx.Navigation);
+                    return;
+                }
+                AddLog($"amt box c8='{c8}' -> {_amountText}");
                 ClickChildSingle(gc, panel, 8);
                 _amountFocused = true;
                 _lastTypeAt = DateTime.Now;
@@ -459,6 +472,20 @@ namespace AutoExile.Systems
         {
             try { var el = panel.GetChildAtIndex(i); if (el != null && el.IsVisible) ClickElement(gc, (ExileCore.PoEMemory.Element)el); }
             catch { }
+        }
+
+        // A plausible amount field: has at least one digit and only digit/separator characters.
+        private static bool IsNumericAmount(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return false;
+            bool hasDigit = false;
+            foreach (var c in s)
+            {
+                if (char.IsDigit(c)) hasDigit = true;
+                else if (c == ',' || c == '.' || c == ' ' || c == 'K' || c == 'k' || c == 'M' || c == 'm') continue;
+                else return false;
+            }
+            return hasDigit;
         }
 
         private static string SafeChildText(dynamic panel, int i)
