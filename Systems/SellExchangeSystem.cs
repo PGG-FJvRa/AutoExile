@@ -36,8 +36,9 @@ namespace AutoExile.Systems
         private DateTime _stateEnteredAt = DateTime.MinValue;
         private DateTime _lastClickAt = DateTime.MinValue;
 
-        private readonly Queue<string> _queue = new(); // base names still to sell
+        private readonly Queue<(string name, int qty)> _queue = new(); // still to sell
         private string _current = "";
+        private int _currentQty; // full owned stack of _current, to list for sale
         private int _ordersPlaced;
         private int _maxOrders = 3;
         private double _thresholdChaos = 50.0;
@@ -53,6 +54,10 @@ namespace AutoExile.Systems
         private bool _searchFocused;
         private DateTime _lastTypeAt = DateTime.MinValue;
         private const int TypeIntervalMs = 280;
+        private bool _amountFocused;
+        private bool _amountCleared;
+        private string _amountText = "";
+        private int _amountIndex;
 
         public bool IsBusy => _state != SellState.Idle;
         public string Status { get; private set; } = "";
@@ -211,7 +216,7 @@ namespace AutoExile.Systems
             if (optCount == 0) { Status = "Sell: waiting for I Have options to load…"; return; }
 
             // Build the queue from the picker options.
-            var rows = new List<(string name, double total)>();
+            var rows = new List<(string name, int qty, double total)>();
             try
             {
                 foreach (var opt in picker.Options)
@@ -224,7 +229,7 @@ namespace AutoExile.Systems
                     double unit = UnitChaos(ctx, name);
                     if (unit <= 0.0) continue;
                     double total = qty * unit;
-                    if (total >= _thresholdChaos) rows.Add((name, total));
+                    if (total >= _thresholdChaos) rows.Add((name, qty, total));
                 }
             }
             catch { }
@@ -235,14 +240,16 @@ namespace AutoExile.Systems
             foreach (var r in rows)
             {
                 if (added >= _maxOrders) break;
-                _queue.Enqueue(r.name);
+                _queue.Enqueue((r.name, r.qty));
                 added++;
             }
 
             AddLog($"scan opts={optCount} cands={rows.Count} queued={added}");
             if (_queue.Count == 0) { Status = $"Sell: no candidates (opts={optCount})"; SetState(SellState.Idle); return; }
 
-            _current = _queue.Dequeue();
+            var (cn, cq) = _queue.Dequeue();
+            _current = cn;
+            _currentQty = cq;
             _havePicked = false;
             _wantPicked = false;
             _ownedFilter = false;
@@ -252,6 +259,10 @@ namespace AutoExile.Systems
             _searchIndex = 0;
             _ownedClicked = false;
             _searchFocused = false;
+            _amountFocused = false;
+            _amountCleared = false;
+            _amountText = _currentQty.ToString();
+            _amountIndex = 0;
             Status = $"Sell: queued {added}/{optCount}; first = {_current}";
             SetState(SellState.PickingHave);
         }
@@ -369,24 +380,36 @@ namespace AutoExile.Systems
             var gc = ctx.Game;
             var panel = gc.IngameState.IngameUi.CurrencyExchangePanel;
             if (panel == null || !panel.IsVisible) { Status = "Sell: panel closed"; Cancel(gc, ctx.Navigation); return; }
-            if (!CanClick()) return;
-
-            // Both amounts must be clicked ("locked in") before Place Order un-greys.
-            // Amount fields are best-guessed at panel children 5 (I-Want) and 8 (I-Have) — logged
-            // so we can correct the indices if wrong.
-            if (!_lockedWant)
+            // Set the I-Have amount to the full owned stack: focus the amount box (panel child 8),
+            // select-all, then type the quantity. The I-Want (Chaos) amount auto-computes from the
+            // market ratio.
+            if (!_amountFocused)
             {
-                AddLog($"amt c5='{SafeChildText(panel, 5)}' c8='{SafeChildText(panel, 8)}'");
-                ClickChildSingle(gc, panel, 5);
-                _lockedWant = true;
-                Status = "Sell: locking I Want amount";
+                if (!CanClick()) return;
+                AddLog($"amt box c8='{SafeChildText(panel, 8)}' -> {_amountText}");
+                ClickChildSingle(gc, panel, 8);
+                _amountFocused = true;
+                _lastTypeAt = DateTime.Now;
+                Status = "Sell: focusing amount box";
                 return;
             }
-            if (!_lockedHave)
+            if (!_amountCleared)
             {
-                ClickChildSingle(gc, panel, 8);
-                _lockedHave = true;
-                Status = "Sell: locking I Have amount";
+                if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return;
+                BotInput.SelectAll();
+                _amountCleared = true;
+                _lastTypeAt = DateTime.Now;
+                return;
+            }
+            if (_amountIndex < _amountText.Length)
+            {
+                if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return;
+                if (!BotInput.CanAct) return;
+                var k = CharToKey(_amountText[_amountIndex]);
+                if (k != System.Windows.Forms.Keys.None) BotInput.PressKey(k);
+                _lastTypeAt = DateTime.Now;
+                if (_amountIndex == 0) AddLog($"typing amount {_amountText}");
+                _amountIndex++;
                 return;
             }
             SetState(SellState.PlacingOrder);
@@ -399,8 +422,7 @@ namespace AutoExile.Systems
             if (panel == null || !panel.IsVisible) { Status = "Sell: panel closed"; Cancel(gc, ctx.Navigation); return; }
             if (!CanClick()) return;
 
-            // NOTE v1: quantity/rate left at the exchange's auto-filled defaults. Full-stack quantity
-            // control is a follow-up once its element is mapped.
+            // Amount is now set to the full stack; rate is the exchange's market fill. Place it.
             ClickChild(gc, panel, 16, 0); // place order
             _ordersPlaced++;
             AddLog($"placed #{_ordersPlaced} {_current}");
@@ -409,7 +431,9 @@ namespace AutoExile.Systems
             if (_ordersPlaced >= _maxOrders || _queue.Count == 0)
             { SetState(SellState.Idle); Status = $"Sell: done, {_ordersPlaced} orders placed"; return; }
 
-            _current = _queue.Dequeue();
+            var (cn, cq) = _queue.Dequeue();
+            _current = cn;
+            _currentQty = cq;
             _havePicked = false;
             _wantPicked = false;
             _ownedFilter = false;
@@ -419,6 +443,10 @@ namespace AutoExile.Systems
             _searchIndex = 0;
             _ownedClicked = false;
             _searchFocused = false;
+            _amountFocused = false;
+            _amountCleared = false;
+            _amountText = _currentQty.ToString();
+            _amountIndex = 0;
             SetState(SellState.PickingHave);
         }
 

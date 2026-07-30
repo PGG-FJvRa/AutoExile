@@ -1247,6 +1247,18 @@ namespace AutoExile.Systems
             }
         }
 
+        /// <summary>Select-all (Ctrl+A) in a focused text field so the next typed value replaces it.</summary>
+        public static void SelectAll()
+        {
+            SendKeyDown(Keys.LControlKey, "selall");
+            System.Threading.Thread.Sleep(30);
+            SendKeyDown(Keys.A, "selall");
+            System.Threading.Thread.Sleep(30);
+            SendKeyUp(Keys.A, "selall");
+            SendKeyUp(Keys.LControlKey, "selall");
+            System.Threading.Thread.Sleep(30);
+        }
+
         /// <summary>
         /// Press and release a key WITHOUT interrupting continuous movement.
         /// For self-cast skills (buffs, guards, flasks) that don't need cursor positioning.
