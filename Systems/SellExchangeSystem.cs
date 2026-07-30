@@ -63,7 +63,7 @@ namespace AutoExile.Systems
         private DateTime _ownedFilterAt = DateTime.MinValue;   // when the full search filter finished typing
         private int _searchAttempts;                           // focus+type retries for the current candidate
         private DateTime _lastTypeAt = DateTime.MinValue;
-        private const int TypeIntervalMs = 380;
+        private const int TypeIntervalMs = 90;  // per-key type pace (fast but human ~11 keys/s); keys use PressKeyTyping
         private const int OwnedSettleMinMs = 900;   // never focus earlier than the old proven floor (grid still rendering)
         private const int OwnedSettleMaxMs = 2500;  // …but never wait longer than this for the grid to go stable
         private const int FilterResultWaitMs = 900; // after typing, wait this long for the result cell to appear
@@ -410,7 +410,7 @@ namespace AutoExile.Systems
                     if (!_searchEmptied)
                     {
                         if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return;
-                        BotInput.PressKey(System.Windows.Forms.Keys.Delete);
+                        BotInput.PressKeyTyping(System.Windows.Forms.Keys.Delete);
                         _searchEmptied = true;
                         _lastTypeAt = DateTime.Now;
                         return;
@@ -420,7 +420,7 @@ namespace AutoExile.Systems
                         if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return;
                         if (!BotInput.CanAct) return;
                         var k = CharToKey(_searchText[_searchIndex]);
-                        if (k != System.Windows.Forms.Keys.None) BotInput.PressKey(k);
+                        if (k != System.Windows.Forms.Keys.None) BotInput.PressKeyTyping(k);
                         _lastTypeAt = DateTime.Now;
                         if (_searchIndex == 0) AddLog($"typing '{_searchText}'");
                         _searchIndex++;
@@ -598,7 +598,7 @@ namespace AutoExile.Systems
                 if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return;
                 if (!BotInput.CanAct) return;
                 var k = CharToKey(_amountText[_amountIndex]);
-                if (k != System.Windows.Forms.Keys.None) BotInput.PressKey(k);
+                if (k != System.Windows.Forms.Keys.None) BotInput.PressKeyTyping(k);
                 _lastTypeAt = DateTime.Now;
                 if (_amountIndex == 0) AddLog($"typing amount {_amountText}");
                 _amountIndex++;
@@ -637,7 +637,7 @@ namespace AutoExile.Systems
             {
                 if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return;
                 if (!BotInput.CanAct) return;
-                BotInput.PressKey(System.Windows.Forms.Keys.D0); // type "0"
+                BotInput.PressKeyTyping(System.Windows.Forms.Keys.D0); // type "0"
                 _wantTyped = true;
                 _lastTypeAt = DateTime.Now;
                 AddLog("typed 0 into I-Want");
@@ -766,7 +766,7 @@ namespace AutoExile.Systems
             }
             if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return false;
             if (!BotInput.CanAct) return false;
-            BotInput.PressKey(System.Windows.Forms.Keys.Delete);
+            BotInput.PressKeyTyping(System.Windows.Forms.Keys.Delete);
             _lastTypeAt = DateTime.Now;
             return true;
         }

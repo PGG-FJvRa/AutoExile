@@ -1224,6 +1224,40 @@ namespace AutoExile.Systems
             return true;
         }
 
+        /// <summary>Typing hold (key down→up) for text-field entry.</summary>
+        public const int TypingHoldMs = 12;
+        /// <summary>Gate reserved per typed key. Much smaller than ActionCooldownMs — typing into a
+        /// focused UI field is not a game action, so it needn't be paced like skills/movement. The
+        /// caller still spaces keys with its own type interval (kept human-plausible, ~10 keys/s).</summary>
+        public const int TypingReserveMs = 55;
+
+        /// <summary>
+        /// Fast key press for TYPING into a focused text field (search box, amount box). Sends at
+        /// text-field speed instead of the game-action cadence: it bypasses the inter-event gap that
+        /// paces skills/movement and reserves only a small typing gate. Does NOT suspend movement or
+        /// release held keys (callers use it only inside UI panels where neither applies). Only use
+        /// this when a field is known-focused — a leaked key still reaches the game.
+        /// </summary>
+        public static bool PressKeyTyping(Keys key)
+        {
+            if (TryCaptureReplay("PressKeyTyping", key: key)) return true;
+            NextActionAt = DateTime.Now.AddMilliseconds(TypingReserveMs);
+            _ = DoPressKeyTyping(key);
+            LogAction("PressKeyTyping", null, key, true);
+            return true;
+        }
+
+        private static async Task DoPressKeyTyping(Keys key)
+        {
+            // Send directly (no CanSendInputEvent drop / SendDelay gap) — typing cadence, not action
+            // cadence. Still marks the event so rate monitoring + CanTick see the activity.
+            MarkInputEvent("KeyDown", $"{key} type");
+            Input.KeyDown(key);
+            await Task.Delay(TypingHoldMs);
+            MarkInputEvent("KeyUp", $"{key} type");
+            Input.KeyUp(key);
+        }
+
         /// <summary>
         /// Type literal text into a focused game text field (e.g. a search box). Sends letters,
         /// digits and spaces; other characters are skipped. Brief blocking delays let the game
