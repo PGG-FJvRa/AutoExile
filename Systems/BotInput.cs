@@ -1250,10 +1250,18 @@ namespace AutoExile.Systems
         /// <summary>Select-all (Ctrl+A) in a focused text field so the next typed value replaces it.</summary>
         public static void SelectAll()
         {
+            // Ctrl+A must land as a real combo. SendKeyDown DROPS any down-event that arrives within
+            // the input-rate gap (MinInputEventGapMs = ActionCooldownMs, default 100ms) of the previous
+            // event — so a 30ms sleep silently drops the A, degrading Ctrl+A to a lone Ctrl press and
+            // leaving stale text in the field (corrupts the next search filter / amount entry). Wait
+            // the full gap ahead of BOTH down-events so neither is dropped.
+            int gap = Math.Max(35, MinInputEventGapMs + 10);
+            var sinceLast = (int)(DateTime.Now - _lastInputEvent).TotalMilliseconds;
+            if (sinceLast < gap) System.Threading.Thread.Sleep(gap - sinceLast);
             SendKeyDown(Keys.LControlKey, "selall");
-            System.Threading.Thread.Sleep(30);
+            System.Threading.Thread.Sleep(gap);
             SendKeyDown(Keys.A, "selall");
-            System.Threading.Thread.Sleep(30);
+            System.Threading.Thread.Sleep(Math.Max(30, RandHold()));
             SendKeyUp(Keys.A, "selall");
             SendKeyUp(Keys.LControlKey, "selall");
             System.Threading.Thread.Sleep(30);
