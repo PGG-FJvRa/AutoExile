@@ -315,24 +315,15 @@ namespace AutoExile.Systems
                 if (!_searchFocused)
                 {
                     if (!CanClick()) return;
+                    // Focus the search box by its element (hits the box precisely). If it's not
+                    // found — leftover text from an interrupted run hid its placeholder — wait
+                    // rather than click blindly (reopen the exchange to reset).
                     var box = FindElementContaining((ExileCore.PoEMemory.Element)panel, "select currency", 0);
-                    if (box != null)
-                    {
-                        ClickRect(gc, box);
-                        AddLog("focus search (placeholder)");
-                    }
-                    else
-                    {
-                        // Leftover text hides the "Select currency" placeholder — focus the search
-                        // box by position (bottom-centre of the picker) so it works regardless.
-                        var pr = ((ExileCore.PoEMemory.Element)picker).GetClientRect();
-                        var pos = new Vector2(pr.X + pr.Width * 0.5f, pr.Y + pr.Height - 18f);
-                        BotInput.Click(ToAbsolutePos(gc, pos));
-                        _lastClickAt = DateTime.Now;
-                        AddLog($"focus search (pos {pos.X:F0},{pos.Y:F0})");
-                    }
+                    if (box == null) { Status = "Sell: search box not found — reopen exchange to reset"; return; }
+                    ClickRect(gc, box);
                     _searchFocused = true;
                     _searchFocusedAt = DateTime.Now;
+                    AddLog("focused search box");
                     return;
                 }
 
