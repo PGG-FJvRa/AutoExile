@@ -851,9 +851,17 @@ namespace AutoExile
             }
             Graphics.DrawText(runtimeText, new Vector2(100, 96), runtimeColor);
 
-            // Sell mode status (shows where the currency-exchange sell run is).
+            // Sell mode status + step log (shows exactly where the sell run goes).
             if (_mode is SellMode sellMode)
+            {
                 Graphics.DrawText($"SELL: {sellMode.Status}", new Vector2(100, 140), SharpDX.Color.Gold);
+                float ly = 156f;
+                foreach (var l in sellMode.Log)
+                {
+                    Graphics.DrawText(l, new Vector2(100, ly), SharpDX.Color.White);
+                    ly += 14f;
+                }
+            }
 
             // Human recorder indicator
             if (_humanRecorder.IsRecording)

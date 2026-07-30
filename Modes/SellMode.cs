@@ -20,6 +20,8 @@ namespace AutoExile.Modes
             ? $"Sell complete — {_sell.OrdersPlaced} orders placed (Insert to stop)"
             : (_started ? _sell.Status : "Sell: starting…");
 
+        public IReadOnlyList<string> Log => _sell.Log;
+
         public void OnEnter(BotContext ctx) { _started = false; _done = false; }
         public void OnExit() { _sell.Cancel(); }
 

@@ -49,6 +49,14 @@ namespace AutoExile.Systems
         public string Status { get; private set; } = "";
         public int OrdersPlaced => _ordersPlaced;
 
+        private readonly List<string> _log = new();
+        public IReadOnlyList<string> Log => _log;
+        private void AddLog(string m)
+        {
+            _log.Add($"{DateTime.Now:HH:mm:ss} {m}");
+            if (_log.Count > 12) _log.RemoveAt(0);
+        }
+
         /// <summary>Begin a sell run. Candidates are computed from the exchange once the panel opens.</summary>
         public void Start(int maxOrders, double thresholdChaos, HashSet<string> exclusions)
         {
@@ -60,6 +68,8 @@ namespace AutoExile.Systems
             _exclusions = exclusions ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             _havePicked = false;
             _wantPicked = false;
+            _log.Clear();
+            AddLog($"start (max={_maxOrders}, thr={_thresholdChaos:F0}c)");
             SetState(SellState.WalkingToFaustus);
         }
 
@@ -77,6 +87,7 @@ namespace AutoExile.Systems
             if ((DateTime.Now - _stateEnteredAt).TotalSeconds > StateTimeoutSeconds)
             {
                 Status = $"Sell: timeout in {_state}";
+                AddLog($"TIMEOUT in {_state}");
                 Cancel(ctx.Game, ctx.Navigation);
                 return;
             }
@@ -218,6 +229,7 @@ namespace AutoExile.Systems
                 added++;
             }
 
+            AddLog($"scan opts={optCount} cands={rows.Count} queued={added}");
             if (_queue.Count == 0) { Status = $"Sell: no candidates (opts={optCount})"; SetState(SellState.Idle); return; }
 
             _current = _queue.Dequeue();
@@ -298,6 +310,7 @@ namespace AutoExile.Systems
             // control is a follow-up once its element is mapped.
             ClickChild(gc, panel, 16, 0); // place order
             _ordersPlaced++;
+            AddLog($"placed #{_ordersPlaced} {_current}");
             Status = $"Sell: placed order {_ordersPlaced} ({_current})";
 
             if (_ordersPlaced >= _maxOrders || _queue.Count == 0)
@@ -311,7 +324,7 @@ namespace AutoExile.Systems
 
         // ── Helpers (mirror FaustusSystem) ──
 
-        private void SetState(SellState s) { _state = s; _stateEnteredAt = DateTime.Now; }
+        private void SetState(SellState s) { _state = s; _stateEnteredAt = DateTime.Now; AddLog($"-> {s}"); }
         private bool CanClick() => (DateTime.Now - _lastClickAt).TotalMilliseconds >= ClickCooldownMs && BotInput.CanAct;
 
         private void ClickChild(GameController gc, dynamic panel, int i, int j)
