@@ -25,6 +25,10 @@ namespace AutoExile.Modes
         public void OnEnter(BotContext ctx) { _started = false; _done = false; }
         public void OnExit() { _sell.Cancel(); }
 
+        /// <summary>Reset so the next Tick begins a fresh sell run (called on the bot's stopped→running
+        /// edge, so Stop then Start re-runs the sell instead of idling on the previous completed run).</summary>
+        public void Restart() { _started = false; _done = false; _sell.Cancel(); }
+
         public void Tick(BotContext ctx)
         {
             if (_done) return;

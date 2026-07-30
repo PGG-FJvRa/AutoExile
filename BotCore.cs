@@ -106,6 +106,7 @@ namespace AutoExile
         private string _lastAreaName = "";
         private long _lastAreaHash;
         private DateTime _areaChangedAt = DateTime.MinValue;
+        private bool _prevRunning; // for detecting the stopped->running edge (restart one-shot modes)
         private float AreaSettleSeconds => Settings.AreaSettleSeconds.Value;
 
         // Cross-zone state cache (e.g., Wishes portal round-trip)
@@ -732,6 +733,12 @@ namespace AutoExile
             // the sellable currency actually lives. Pivoting to the exchange "I Have" picker as the
             // holdings source instead. Method kept for reference.
             // TickSellScan();
+
+            // Rising edge of Running (Insert hotkey or dashboard Start): restart one-shot modes so
+            // they run again on Start instead of sitting idle after their first completed run.
+            if (Settings.Running.Value && !_prevRunning)
+                (_mode as Modes.SellMode)?.Restart();
+            _prevRunning = Settings.Running.Value;
 
             // Only run full mode logic when running
             if (!Settings.Running)
