@@ -198,7 +198,14 @@ namespace AutoExile.Systems
         {
             var gc = ctx.Game;
             var panel = gc.IngameState.IngameUi.CurrencyExchangePanel;
-            if (panel != null && panel.IsVisible) { SetState(SellState.ScanCandidates); return; }
+            if (panel != null && panel.IsVisible)
+            {
+                // Panel's up — make sure navigation isn't still issuing movement clicks (they would
+                // defocus the search box mid-type). We're parked at Faustus now; nothing more to walk.
+                ctx.Navigation?.Stop(gc);
+                SetState(SellState.ScanCandidates);
+                return;
+            }
             if ((DateTime.Now - _stateEnteredAt).TotalSeconds < 2.0) { Status = "Sell: waiting for exchange panel"; return; }
             var dialog = gc.IngameState.IngameUi.NpcDialog;
             if (dialog != null && dialog.IsVisible) { SetState(SellState.ClickingExchange); return; }
@@ -365,20 +372,6 @@ namespace AutoExile.Systems
                     {
                         if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return;
                         if (!BotInput.CanAct) return;
-                        // After the first key, verify the box actually took it — the "Select currency"
-                        // placeholder vanishes once there's input. If it's still showing, focus was lost:
-                        // re-focus and retry rather than typing the rest of the name into the game.
-                        if (_searchIndex == 1 && _searchRetries < 3
-                            && !SearchBoxHasInput((ExileCore.PoEMemory.Element)panel))
-                        {
-                            _searchRetries++;
-                            AddLog($"search not registering — re-focus (retry {_searchRetries})");
-                            _searchFocused = false;
-                            _searchCleared = false;
-                            _searchIndex = 0;
-                            _ownedClickedAt = DateTime.Now; // re-settle before re-focusing
-                            return;
-                        }
                         var k = CharToKey(_searchText[_searchIndex]);
                         if (k != System.Windows.Forms.Keys.None) BotInput.PressKey(k);
                         _lastTypeAt = DateTime.Now;

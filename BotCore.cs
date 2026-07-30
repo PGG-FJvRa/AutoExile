@@ -747,13 +747,22 @@ namespace AutoExile
                 return base.Tick();
             }
 
-            // Deterministic Flame Link on zone-enter / resurrect — links all minions incl. merc.
-            // Runs before the interrupt/area-settle gates so links land before the first wave.
-            TickMinionLink();
+            // These global systems each issue their own key/click input every tick. During a Sell run
+            // (hideout, at Faustus, exchange panel open) they would steal focus from the search box and
+            // leak keystrokes into the game (a minion-link keypress, a flask key, etc.) — and the Sell
+            // flow needs none of them. Skip them entirely while selling.
+            bool selling = _mode is Modes.SellMode;
 
-            // Global interrupts — handle before mode gets control
-            if (!HandleInterrupts())
-                return base.Tick();
+            if (!selling)
+            {
+                // Deterministic Flame Link on zone-enter / resurrect — links all minions incl. merc.
+                // Runs before the interrupt/area-settle gates so links land before the first wave.
+                TickMinionLink();
+
+                // Global interrupts — handle before mode gets control
+                if (!HandleInterrupts())
+                    return base.Tick();
+            }
 
             // Area change settle — entity list and game state aren't reliable for
             // a few seconds after zone transition. Skip mode logic to prevent
@@ -800,8 +809,10 @@ namespace AutoExile
             if (canAct)
                 _navigation.Tick(GameController);
 
-            // Auto level gems (global, runs across all modes)
-            TickGemLevelUp();
+            // Auto level gems (global) — but not during a Sell run (its clicks would defocus the
+            // exchange search box mid-type).
+            if (!selling)
+                TickGemLevelUp();
 
             return base.Tick();
         }
