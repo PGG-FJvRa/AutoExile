@@ -44,6 +44,7 @@ namespace AutoExile.Systems
         private HashSet<string> _exclusions = new(StringComparer.OrdinalIgnoreCase);
         private bool _havePicked;
         private bool _wantPicked;
+        private bool _ownedFilter; // clicked the "Owned" category to shrink the list this candidate
 
         public bool IsBusy => _state != SellState.Idle;
         public string Status { get; private set; } = "";
@@ -235,6 +236,7 @@ namespace AutoExile.Systems
             _current = _queue.Dequeue();
             _havePicked = false;
             _wantPicked = false;
+            _ownedFilter = false;
             Status = $"Sell: queued {added}/{optCount}; first = {_current}";
             SetState(SellState.PickingHave);
         }
@@ -258,6 +260,17 @@ namespace AutoExile.Systems
 
             if (picker != null && picker.IsVisible && !picker.IsPickingWantedCurrency)
             {
+                // Shrink the 1000+ item list to just owned currencies so the target is on-screen.
+                if (!_ownedFilter)
+                {
+                    if (!CanClick()) return;
+                    var ownedTab = FindElementByText((ExileCore.PoEMemory.Element)panel, "Owned", 0);
+                    _ownedFilter = true;
+                    if (ownedTab != null) { ClickRect(gc, ownedTab); AddLog("clicked Owned filter"); return; }
+                    AddLog("Owned tab not found");
+                    return;
+                }
+
                 var option = FindPickerOption(picker, null, _current);
                 if (option == null) { Status = $"Sell: {_current} not in I Have picker"; return; }
                 if (!CanClick()) return;
@@ -324,6 +337,7 @@ namespace AutoExile.Systems
             _current = _queue.Dequeue();
             _havePicked = false;
             _wantPicked = false;
+            _ownedFilter = false;
             SetState(SellState.PickingHave);
         }
 
@@ -402,6 +416,27 @@ namespace AutoExile.Systems
             foreach (var entity in gc.EntityListWrapper.OnlyValidEntities)
                 if (entity.Path?.Contains(FaustusPath, StringComparison.OrdinalIgnoreCase) == true)
                     return entity;
+            return null;
+        }
+
+        // Recursively find the first element whose trimmed text matches (case-insensitive).
+        private static ExileCore.PoEMemory.Element FindElementByText(ExileCore.PoEMemory.Element root, string text, int depth)
+        {
+            if (root == null || depth > 12) return null;
+            try
+            {
+                var t = root.Text;
+                if (!string.IsNullOrEmpty(t) && t.Trim().Equals(text, StringComparison.OrdinalIgnoreCase))
+                    return root;
+                var kids = root.Children;
+                if (kids != null)
+                    for (int i = 0; i < kids.Count; i++)
+                    {
+                        var f = FindElementByText(kids[i], text, depth + 1);
+                        if (f != null) return f;
+                    }
+            }
+            catch { }
             return null;
         }
 
