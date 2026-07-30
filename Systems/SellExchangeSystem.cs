@@ -63,6 +63,7 @@ namespace AutoExile.Systems
         private bool _wantFocused;
         private bool _wantCleared;
         private bool _wantTyped;
+        private bool _wantClickedOut;
         private bool _wantFinalized;
 
         public bool IsBusy => _state != SellState.Idle;
@@ -273,6 +274,7 @@ namespace AutoExile.Systems
             _wantFocused = false;
             _wantCleared = false;
             _wantTyped = false;
+            _wantClickedOut = false;
             _wantFinalized = false;
             Status = $"Sell: queued {added}/{optCount}; first = {_current}";
             SetState(SellState.PickingHave);
@@ -490,7 +492,16 @@ namespace AutoExile.Systems
             // Give the exchange a moment to recompute the ratio.
             if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < 500) return;
 
-            // Click the Chaos amount box once more to finalize the sell amount before placing.
+            // Click out of the Chaos box (Market Ratio label) so the 0 commits.
+            if (!_wantClickedOut)
+            {
+                if (!CanClick()) return;
+                ClickChildSingle(gc, panel, 14);
+                _wantClickedOut = true;
+                AddLog("clicked out of Chaos box");
+                return;
+            }
+            // Now click the Chaos amount box once more to finalize the sell amount before placing.
             if (!_wantFinalized)
             {
                 if (!CanClick()) return;
@@ -538,6 +549,7 @@ namespace AutoExile.Systems
             _wantFocused = false;
             _wantCleared = false;
             _wantTyped = false;
+            _wantClickedOut = false;
             _wantFinalized = false;
             SetState(SellState.PickingHave);
         }
