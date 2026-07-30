@@ -44,9 +44,11 @@ namespace AutoExile.Systems
         private HashSet<string> _exclusions = new(StringComparer.OrdinalIgnoreCase);
         private bool _havePicked;
         private bool _wantPicked;
-        private bool _ownedFilter; // clicked the "Owned" category to shrink the list this candidate
+        private bool _ownedFilter; // = finished typing the search filter for this candidate
         private bool _lockedWant;
         private bool _lockedHave;
+        private string _searchText = "";
+        private int _searchIndex;
 
         public bool IsBusy => _state != SellState.Idle;
         public string Status { get; private set; } = "";
@@ -242,6 +244,8 @@ namespace AutoExile.Systems
             _ownedFilter = false;
             _lockedWant = false;
             _lockedHave = false;
+            _searchText = SearchPrefix(_current);
+            _searchIndex = 0;
             Status = $"Sell: queued {added}/{optCount}; first = {_current}";
             SetState(SellState.PickingHave);
         }
@@ -269,12 +273,19 @@ namespace AutoExile.Systems
                 // 1000+ item list down to the match, which then appears at the top / on-screen.
                 if (!_ownedFilter)
                 {
-                    if (!CanClick()) return;
-                    var q = SearchPrefix(_current);
-                    BotInput.TypeText(q);
-                    _ownedFilter = true;
-                    _lastClickAt = DateTime.Now;
-                    AddLog($"typed '{q}' to search");
+                    // Type the search filter one key per tick (the box is auto-focused). A rapid
+                    // burst only registers the first key, so gate one character at a time.
+                    if (_searchIndex < _searchText.Length)
+                    {
+                        if (!BotInput.CanAct) return;
+                        var k = CharToKey(_searchText[_searchIndex]);
+                        if (k != System.Windows.Forms.Keys.None) BotInput.PressKey(k);
+                        if (_searchIndex == 0) AddLog($"typing '{_searchText}'");
+                        _searchIndex++;
+                        return;
+                    }
+                    _ownedFilter = true;         // finished typing the filter
+                    _lastClickAt = DateTime.Now; // brief settle for the list to filter
                     return;
                 }
 
@@ -375,6 +386,8 @@ namespace AutoExile.Systems
             _ownedFilter = false;
             _lockedWant = false;
             _lockedHave = false;
+            _searchText = SearchPrefix(_current);
+            _searchIndex = 0;
             SetState(SellState.PickingHave);
         }
 
@@ -423,6 +436,15 @@ namespace AutoExile.Systems
         // Typeable prefix for the search box: letters/digits/spaces up to the first punctuation
         // (e.g. an apostrophe), so it stays a valid substring of the display name.
         // "Dead Man's Sulphur" -> "dead man"; "Orb of Annulment" -> "orb of annulment".
+        private static System.Windows.Forms.Keys CharToKey(char ch)
+        {
+            char c = char.ToLowerInvariant(ch);
+            if (c >= 'a' && c <= 'z') return (System.Windows.Forms.Keys)((int)System.Windows.Forms.Keys.A + (c - 'a'));
+            if (c >= '0' && c <= '9') return (System.Windows.Forms.Keys)((int)System.Windows.Forms.Keys.D0 + (c - '0'));
+            if (c == ' ') return System.Windows.Forms.Keys.Space;
+            return System.Windows.Forms.Keys.None;
+        }
+
         private static string SearchPrefix(string name)
         {
             if (string.IsNullOrEmpty(name)) return "";
