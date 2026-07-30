@@ -55,6 +55,7 @@ namespace AutoExile.Systems
         private bool _searchFocused;
         private DateTime _searchFocusedAt;
         private bool _searchCleared;
+        private bool _searchEmptied;
         private int _searchRetries;
         private DateTime _lastTypeAt = DateTime.MinValue;
         private const int TypeIntervalMs = 380;
@@ -284,6 +285,7 @@ namespace AutoExile.Systems
             _ownedClickedAt = DateTime.MinValue;
             _searchFocused = false;
             _searchCleared = false;
+            _searchEmptied = false;
             _amountFocused = false;
             _amountCleared = false;
             _amountText = _currentQty.ToString();
@@ -363,8 +365,20 @@ namespace AutoExile.Systems
                         // Wait after focusing so the search box reliably keeps focus.
                         if ((DateTime.Now - _searchFocusedAt).TotalMilliseconds < 1600)
                         { Status = "Sell: settling on search box"; return; }
+                        AddLog($"clear search (box='{SafeChildText(panel, 15)}')");
                         BotInput.SelectAll();
                         _searchCleared = true;
+                        _lastTypeAt = DateTime.Now;
+                        return;
+                    }
+                    // Delete the selection to actually empty the box. On the 2nd+ item the box still
+                    // holds the previous item's name; select-all + retype doesn't reliably replace it,
+                    // so an explicit Delete clears it before we type the new name.
+                    if (!_searchEmptied)
+                    {
+                        if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return;
+                        BotInput.PressKey(System.Windows.Forms.Keys.Delete);
+                        _searchEmptied = true;
                         _lastTypeAt = DateTime.Now;
                         return;
                     }
@@ -652,6 +666,7 @@ namespace AutoExile.Systems
             _ownedClickedAt = DateTime.MinValue;
             _searchFocused = false;
             _searchCleared = false;
+            _searchEmptied = false;
             _amountFocused = false;
             _amountCleared = false;
             _amountText = _currentQty.ToString();
