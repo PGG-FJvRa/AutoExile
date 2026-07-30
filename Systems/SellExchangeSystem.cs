@@ -55,7 +55,7 @@ namespace AutoExile.Systems
         private DateTime _searchFocusedAt;
         private bool _searchCleared;
         private DateTime _lastTypeAt = DateTime.MinValue;
-        private const int TypeIntervalMs = 280;
+        private const int TypeIntervalMs = 380;
         private bool _amountFocused;
         private bool _amountCleared;
         private string _amountText = "";
@@ -331,8 +331,8 @@ namespace AutoExile.Systems
                 {
                     if (!_searchCleared)
                     {
-                        // Wait a full second after focusing so the search box keeps focus.
-                        if ((DateTime.Now - _searchFocusedAt).TotalMilliseconds < 1000)
+                        // Wait after focusing so the search box reliably keeps focus.
+                        if ((DateTime.Now - _searchFocusedAt).TotalMilliseconds < 1600)
                         { Status = "Sell: settling on search box"; return; }
                         BotInput.SelectAll();
                         _searchCleared = true;
