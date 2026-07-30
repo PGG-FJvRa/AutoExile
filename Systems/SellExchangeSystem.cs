@@ -65,6 +65,9 @@ namespace AutoExile.Systems
         private bool _wantTyped;
         private bool _wantClickedOut;
         private bool _wantFinalized;
+        private int _placeAttempts;
+        private int _placeSlots0 = -1;
+        private DateTime _lastPlaceClickAt = DateTime.MinValue;
 
         public bool IsBusy => _state != SellState.Idle;
         public string Status { get; private set; } = "";
@@ -276,6 +279,9 @@ namespace AutoExile.Systems
             _wantTyped = false;
             _wantClickedOut = false;
             _wantFinalized = false;
+            _placeAttempts = 0;
+            _placeSlots0 = -1;
+            _lastPlaceClickAt = DateTime.MinValue;
             Status = $"Sell: queued {added}/{optCount}; first = {_current}";
             SetState(SellState.PickingHave);
         }
@@ -520,15 +526,37 @@ namespace AutoExile.Systems
             if (panel == null || !panel.IsVisible) { Status = "Sell: panel closed"; Cancel(gc, ctx.Navigation); return; }
             // Give Place Order a moment to enable after finalizing the amount.
             if ((DateTime.Now - _stateEnteredAt).TotalMilliseconds < 600) return;
-            if (!CanClick()) return;
 
-            string pbtn = "?";
-            try { var e = panel.GetChildAtIndex(16)?.GetChildAtIndex(0); pbtn = e == null ? "" : (string)e.Text ?? ""; } catch { }
-            AddLog($"place c16/0='{pbtn}'");
-            ClickChild(gc, panel, 16, 0); // place order
-            _ordersPlaced++;
-            AddLog($"placed #{_ordersPlaced} {_current}");
-            Status = $"Sell: placed order {_ordersPlaced} ({_current})";
+            // Watch the order-slot count (child 19, "N/10"): a placed order bumps it. The first
+            // click after finalizing often only defocuses the amount field instead of placing, so
+            // retry — but stop the instant the slot count rises so we never double-place.
+            if (_placeSlots0 < 0) _placeSlots0 = FindSlotCount(panel); // capture once
+            int slotsNow = FindSlotCount(panel);
+            bool placed = _placeSlots0 >= 0 && slotsNow > _placeSlots0;
+
+            if (!placed && _placeAttempts < 3)
+            {
+                // Wait between clicks so a successful placement registers before we click again.
+                if ((DateTime.Now - _lastPlaceClickAt).TotalMilliseconds < 900) return;
+                if (!CanClick()) return;
+                AddLog($"place attempt {_placeAttempts + 1} (slots {slotsNow})");
+                ClickChild(gc, panel, 16, 0); // place order
+                _placeAttempts++;
+                _lastPlaceClickAt = DateTime.Now;
+                return;
+            }
+
+            if (placed)
+            {
+                _ordersPlaced++;
+                AddLog($"placed #{_ordersPlaced} {_current} (slots {slotsNow})");
+                Status = $"Sell: placed order {_ordersPlaced} ({_current})";
+            }
+            else
+            {
+                AddLog($"place FAILED after {_placeAttempts} (slots {slotsNow})");
+                Status = $"Sell: place failed ({_current})";
+            }
 
             if (_ordersPlaced >= _maxOrders || _queue.Count == 0)
             { SetState(SellState.Idle); Status = $"Sell: done, {_ordersPlaced} orders placed"; return; }
@@ -555,6 +583,9 @@ namespace AutoExile.Systems
             _wantTyped = false;
             _wantClickedOut = false;
             _wantFinalized = false;
+            _placeAttempts = 0;
+            _placeSlots0 = -1;
+            _lastPlaceClickAt = DateTime.MinValue;
             SetState(SellState.PickingHave);
         }
 
@@ -587,6 +618,25 @@ namespace AutoExile.Systems
         {
             try { var e = panel.GetChildAtIndex(i); return e == null ? "" : (string)e.Text ?? ""; }
             catch { return "?"; }
+        }
+
+        // Find the used-order-slot count by scanning the panel for the "N/M" label (e.g. "0/10").
+        // Returns N (orders currently placed), or -1 if not found. Robust to child-index shifts.
+        private static int FindSlotCount(dynamic panel)
+        {
+            for (int i = 10; i < 30; i++)
+            {
+                string t = SafeChildText(panel, i);
+                if (string.IsNullOrWhiteSpace(t)) continue;
+                int slash = t.IndexOf('/');
+                if (slash <= 0 || slash >= t.Length - 1) continue;
+                string a = t.Substring(0, slash).Trim();
+                string b = t.Substring(slash + 1).Trim();
+                if (int.TryParse(a, out int n) && int.TryParse(b, out int m)
+                    && m > 0 && m <= 20 && n >= 0 && n <= m)
+                    return n;
+            }
+            return -1;
         }
 
         // Find the first element whose (normalized) text contains 'name' and whose rect is within
