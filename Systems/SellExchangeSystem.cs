@@ -68,6 +68,8 @@ namespace AutoExile.Systems
         private int _placeAttempts;
         private int _placeSlots0 = -1;
         private DateTime _lastPlaceClickAt = DateTime.MinValue;
+        private bool _clrHaveFocused, _clrHaveSelected, _clrHaveDone;
+        private bool _clrWantFocused, _clrWantSelected, _clrWantDone;
 
         public bool IsBusy => _state != SellState.Idle;
         public string Status { get; private set; } = "";
@@ -127,6 +129,7 @@ namespace AutoExile.Systems
                 case SellState.PickingWant: TickPickWant(ctx); break;
                 case SellState.LockingAmounts: TickLockAmounts(ctx); break;
                 case SellState.PlacingOrder: TickPlaceOrder(ctx); break;
+                case SellState.ClearingBuilder: TickClearBuilder(ctx); break;
             }
         }
 
@@ -558,6 +561,61 @@ namespace AutoExile.Systems
                 Status = $"Sell: place failed ({_current})";
             }
 
+            // Clear the item + Chaos out of the builder before moving on, so no leftover order
+            // lingers there to re-fire into the (only 10) order slots.
+            _clrHaveFocused = _clrHaveSelected = _clrHaveDone = false;
+            _clrWantFocused = _clrWantSelected = _clrWantDone = false;
+            SetState(SellState.ClearingBuilder);
+        }
+
+        // Empty the I-Have (child 8) and I-Want/Chaos (child 5) amount boxes so the builder holds no
+        // placeable order between/after orders — keeps the 10 order slots from filling with leftovers.
+        private void TickClearBuilder(BotContext ctx)
+        {
+            var gc = ctx.Game;
+            var panel = gc.IngameState.IngameUi.CurrencyExchangePanel;
+            if (panel == null || !panel.IsVisible) { AdvanceAfterClear(); return; }
+
+            if (!_clrHaveDone)
+            { if (ClearAmountBox(gc, panel, 8, ref _clrHaveFocused, ref _clrHaveSelected)) _clrHaveDone = true; return; }
+            if (!_clrWantDone)
+            { if (ClearAmountBox(gc, panel, 5, ref _clrWantFocused, ref _clrWantSelected)) _clrWantDone = true; return; }
+
+            AddLog("cleared builder");
+            AdvanceAfterClear();
+        }
+
+        // Focus a numeric amount box, select-all, delete. Returns true once cleared (or safely
+        // skipped if the child isn't a numeric box — never types unless the box is confirmed+focused).
+        private bool ClearAmountBox(GameController gc, dynamic panel, int childIdx, ref bool focused, ref bool selected)
+        {
+            if (!focused)
+            {
+                if (!CanClick()) return false;
+                if (!IsNumericAmount(SafeChildText(panel, childIdx))) return true; // not the box — skip, don't type
+                ClickChildSingle(gc, panel, childIdx);
+                focused = true;
+                _lastTypeAt = DateTime.Now;
+                return false;
+            }
+            if (!selected)
+            {
+                if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return false;
+                BotInput.SelectAll();
+                selected = true;
+                _lastTypeAt = DateTime.Now;
+                return false;
+            }
+            if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return false;
+            if (!BotInput.CanAct) return false;
+            BotInput.PressKey(System.Windows.Forms.Keys.Delete);
+            _lastTypeAt = DateTime.Now;
+            return true;
+        }
+
+        // Move to the next queued candidate, or finish the run.
+        private void AdvanceAfterClear()
+        {
             if (_ordersPlaced >= _maxOrders || _queue.Count == 0)
             { SetState(SellState.Idle); Status = $"Sell: done, {_ordersPlaced} orders placed"; return; }
 
@@ -885,5 +943,6 @@ namespace AutoExile.Systems
         PickingWant,
         LockingAmounts,
         PlacingOrder,
+        ClearingBuilder,
     }
 }
