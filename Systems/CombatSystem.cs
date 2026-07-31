@@ -1527,6 +1527,46 @@ namespace AutoExile.Systems
         // Positioning — uses cursor + move key, never clicks
         // ═══════════════════════════════════════════════════
 
+        /// <summary>
+        /// Compute a tangential "strafe" target that circles <paramref name="center"/> at
+        /// <paramref name="radius"/> grid units while keeping targeting LOS to it. Reverses the
+        /// orbit direction when the chosen spot is blocked (wall / arena edge) and shoves
+        /// straight out if boxed in too close. Returns null if nothing walkable is found.
+        /// Shared by the boss orbit and the general Combat-Strafe behavior so both inherit the
+        /// same wall-/corner-avoidance. Uses/updates the persistent _bossOrbitDir strafe sign.
+        /// </summary>
+        private Vector2? OrbitAround(BotContext ctx, Vector2 center, float radius)
+        {
+            var gc = ctx.Game;
+            var pGrid = gc.Player.GridPosNum;
+            var radial = pGrid - center;
+            float curR = radial.Length();
+            var radialDir = curR > 0.001f ? radial / curR : new Vector2(1f, 0f);
+            var pf = gc.IngameState.Data.RawFramePathfindingData;
+            float step = MathF.Min(radius * 0.5f, 18f);
+
+            Vector2? chosen = null;
+            for (int attempt = 0; attempt < 2 && !chosen.HasValue; attempt++)
+            {
+                var tangent = new Vector2(-radialDir.Y, radialDir.X) * _bossOrbitDir;
+                var target = pGrid + tangent * step + radialDir * (radius - curR);
+                var cand = ctx.Navigation.FindWalkableWithLOS(gc, target, center, 20);
+                if (cand.HasValue && (pf == null || Pathfinding.HasLineOfSight(pf, pGrid, cand.Value)))
+                    chosen = cand;
+                else
+                    _bossOrbitDir = -_bossOrbitDir; // spot blocked — reverse next try
+            }
+
+            // Boxed in but too close — shove straight out from the center as a last resort.
+            if (!chosen.HasValue && curR < radius)
+            {
+                var outTarget = pGrid + radialDir * (radius - curR + 10f);
+                chosen = ctx.Navigation.FindWalkableWithLOS(gc, outTarget, center, 20)
+                      ?? ctx.Navigation.FindWalkableWithLOS(gc, pGrid, center, 20);
+            }
+            return chosen;
+        }
+
         private void TickPositioning(BotContext ctx)
         {
             var gc = ctx.Game;
@@ -1558,40 +1598,14 @@ namespace AutoExile.Systems
                 // Only orbit while actually near a boss; otherwise let normal positioning approach.
                 if (nearestThreat <= settings.CombatRange.Value)
                 {
-                    var radial = pGrid - center;
-                    float curR = radial.Length();
-                    var radialDir = curR > 0.001f ? radial / curR : new Vector2(1f, 0f);
-                    var pfBoss = gc.IngameState.Data.RawFramePathfindingData;
-                    float step = MathF.Min(bossKeepDist * 0.5f, 18f);
-
-                    Vector2? chosen = null;
-                    for (int attempt = 0; attempt < 2 && !chosen.HasValue; attempt++)
-                    {
-                        var tangent = new Vector2(-radialDir.Y, radialDir.X) * _bossOrbitDir;
-                        var target = pGrid + tangent * step + radialDir * (bossKeepDist - curR);
-                        var cand = ctx.Navigation.FindWalkableWithLOS(gc, target, center, 20);
-                        if (cand.HasValue &&
-                            (pfBoss == null || Pathfinding.HasLineOfSight(pfBoss, pGrid, cand.Value)))
-                            chosen = cand;
-                        else
-                            _bossOrbitDir = -_bossOrbitDir; // strafe spot blocked — reverse next try
-                    }
-
-                    // Boxed in but too close — shove straight out from the boss as a last resort.
-                    if (!chosen.HasValue && nearestThreat < bossKeepDist)
-                    {
-                        var outTarget = pGrid + radialDir * (bossKeepDist - nearestThreat + 10f);
-                        chosen = ctx.Navigation.FindWalkableWithLOS(gc, outTarget, center, 20)
-                              ?? ctx.Navigation.FindWalkableWithLOS(gc, pGrid, center, 20);
-                    }
-
+                    var chosen = OrbitAround(ctx, center, bossKeepDist);
                     if (chosen.HasValue)
                     {
                         WantsToMove = true;
                         MoveTargetGrid = chosen.Value;
                         MoveTarget = ToWorld(chosen.Value);
                         ExecuteMove(gc, chosen.Value);
-                        LastAction = $"orbiting boss (r={curR:F0}/{bossKeepDist} dir={_bossOrbitDir})";
+                        LastAction = $"orbiting boss (dir={_bossOrbitDir})";
                         return;
                     }
                     // Nothing walkable — fall through to normal positioning.
@@ -1611,6 +1625,27 @@ namespace AutoExile.Systems
             var playerGrid = gc.Player.GridPosNum;
             float dist = Vector2.Distance(playerGrid, DenseClusterCenter);
             float fightRange = settings.FightRange.Value;
+
+            // ── Active combat strafe (opt-in): never stand still ──
+            // Generalizes the boss-orbit strafe to ALL combat — continuously circle the pack at
+            // Fight Range instead of holding position, so the character is a moving target and
+            // can't get pinned in a corner (shared reverse-on-block + shove-out logic). We drive
+            // the move directly via ExecuteMove and deliberately do NOT set WantsToMove: that
+            // signal makes Aggressive-positioning modes launch their own A* to the target, which
+            // would fight the direct cursor-walk. Falls through to normal positioning only when
+            // no walkable strafe spot exists.
+            if (settings.CombatStrafe.Value)
+            {
+                var strafe = OrbitAround(ctx, DenseClusterCenter, fightRange);
+                if (strafe.HasValue)
+                {
+                    MoveTargetGrid = strafe.Value;
+                    MoveTarget = ToWorld(strafe.Value);
+                    ExecuteMove(gc, strafe.Value);
+                    LastAction = $"strafing pack (r={fightRange:F0} dir={_bossOrbitDir})";
+                    return;
+                }
+            }
 
             Vector2? desiredGridPos = null;
 

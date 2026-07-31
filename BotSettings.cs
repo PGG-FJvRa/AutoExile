@@ -217,6 +217,9 @@ namespace AutoExile
             [Menu("Fight Range", "Preferred grid distance to fight monsters from. Melee/Ranged positioning target. Aggressive ignores this.")]
             public RangeNode<int> FightRange { get; set; } = new RangeNode<int>(40, 5, 80);
 
+            [Menu("Combat Strafe", "Never stand still in combat: continuously circle the monster pack at Fight Range instead of holding position. Keeps you a moving target (sidesteps ground effects) and self-corrects out of corners. Ideal for minion/totem builds that don't need to stand still to attack. Best with Ranged/Melee positioning.")]
+            public ToggleNode CombatStrafe { get; set; } = new ToggleNode(false);
+
             [Menu("Boss Keep-Distance", "Grid distance to keep from Kosis & Omniphobia (Simulacrum bosses). The bot backs away to this range instead of standing in their melee, and won't re-approach. 0 = disabled.")]
             public RangeNode<int> BossKeepDistance { get; set; } = new RangeNode<int>(0, 0, 120);
 
