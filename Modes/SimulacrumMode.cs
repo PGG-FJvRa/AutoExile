@@ -41,6 +41,16 @@ namespace AutoExile.Modes
         // Between-wave stash tracking
         private bool _isStashing;
 
+        // Stash-unavailable guard — if the arena's stash can't be reached/resolved (a
+        // false-positive prop on some layouts, or an unreachable real stash), give up
+        // between-wave stashing for the rest of the run instead of looping BetweenWaveStash
+        // → WaveCycle forever. Items are safe: they get stashed back in the hideout on the
+        // next run's opening trip. Reset per map (new arena) so a bad layout doesn't poison
+        // the next run.
+        private bool _stashUnavailableThisRun;
+        private int _stashFailCount;
+        private const int MaxStashFailures = 2;
+
         // Wave transition tracking — reset exploration seen state each wave so we re-sweep for new spawns
         private int _lastKnownWave;
         // Track whether we were searching (no monsters) last tick — reset exploration when
@@ -78,6 +88,8 @@ namespace AutoExile.Modes
             _mapCompleted = false;
             _lastAreaName = "";
             _isStashing = false;
+            _stashUnavailableThisRun = false;
+            _stashFailCount = 0;
             _lootTracker.Reset();
             _lastKnownWave = 0;
             _wasSearching = false;
@@ -286,6 +298,9 @@ namespace AutoExile.Modes
                         ctx.Settings.Build.BlinkRange.Value);
                 }
 
+                // Fresh arena — re-evaluate whether a usable stash exists here.
+                _stashUnavailableThisRun = false;
+                _stashFailCount = 0;
                 _lootTracker.ResetCount();
                 StatusText = "Entered map — finding monolith";
             }
@@ -614,7 +629,7 @@ namespace AutoExile.Modes
             // threshold, stashes one, picks up another, loops forever.
             // Don't start StashSystem here — TickBetweenWaveStash navigates to the
             // cached stash position first so the entity loads into the entity list.
-            if (!_state.IsWaveActive && _state.StashPosition.HasValue && !ctx.Interaction.IsBusy)
+            if (!_state.IsWaveActive && _state.StashPosition.HasValue && !_stashUnavailableThisRun && !ctx.Interaction.IsBusy)
             {
                 // Count only items the filter would actually deposit — full Simulacrums
                 // are kept in inventory for future runs and must NOT trigger a stash trip.
@@ -1011,6 +1026,25 @@ namespace AutoExile.Modes
         // Between-wave stash
         // =================================================================
 
+        /// <summary>
+        /// Give up between-wave stashing for the rest of this run. Called when the stash
+        /// can't be reached/resolved so the wave loop never hangs retrying. Items stay in
+        /// inventory and get stashed safely back in the hideout on the next run. Resets on
+        /// map entry / OnEnter so the next arena re-evaluates its own stash.
+        /// </summary>
+        private void DisableStashForRun(BotContext ctx, string reason)
+        {
+            _stashUnavailableThisRun = true;
+            _stashFailCount = 0;
+            _isStashing = false;
+            if (ctx.Stash.IsBusy)
+                ctx.Stash.Cancel(ctx.Game, ctx.Navigation);
+            _state.ClearStashPosition();
+            _phase = SimPhase.WaveCycle;
+            _phaseStartTime = DateTime.Now;
+            StatusText = $"Stash unavailable ({reason}) — skipping stash, continuing waves";
+        }
+
         private void TickBetweenWaveStash(BotContext ctx, InteractionResult interactionResult)
         {
             // If wave started while stashing, cancel and return to wave cycle
@@ -1025,15 +1059,12 @@ namespace AutoExile.Modes
                 return;
             }
 
-            // Timeout
+            // Timeout — 30s in this phase without a successful stash means the stash can't be
+            // used on this layout. Give up stashing for the run so the wave loop doesn't
+            // re-enter here forever (Priority 4 would immediately send us back).
             if ((DateTime.Now - _phaseStartTime).TotalSeconds > 30)
             {
-                if (ctx.Stash.IsBusy)
-                    ctx.Stash.Cancel(ctx.Game, ctx.Navigation);
-                _isStashing = false;
-                _phase = SimPhase.WaveCycle;
-                _phaseStartTime = DateTime.Now;
-                StatusText = "Stash timeout — resuming wave cycle";
+                DisableStashForRun(ctx, "timeout");
                 return;
             }
 
@@ -1084,14 +1115,21 @@ namespace AutoExile.Modes
                     // keeps working. The between-waves loot logic (Priority 4) runs first,
                     // and shouldContinueStashing ensures we come back to stash any new pickups
                     // before starting the next wave. _isStashing resets when the wave starts.
+                    _stashFailCount = 0; // a successful stash clears the failure streak
                     _phase = SimPhase.WaveCycle;
                     _phaseStartTime = DateTime.Now;
                     StatusText = $"Stashed {ctx.Stash.ItemsStored} items — resuming wave cycle";
                     break;
                 case StashResult.Failed:
-                    // StashSystem failed (entity not found, no path, etc.)
-                    // Don't immediately give up — go back to navigating to stash position
-                    StatusText = $"Stash failed ({ctx.Stash.Status}) — retrying";
+                    // StashSystem failed (entity not found, no path, etc.). A couple of
+                    // consecutive failures means the stash can't be resolved on this layout
+                    // (e.g. a false-positive "Stash"-metadata prop) — give up stashing for the
+                    // run rather than looping BetweenWaveStash → WaveCycle → BetweenWaveStash.
+                    _stashFailCount++;
+                    if (_stashFailCount >= MaxStashFailures)
+                        DisableStashForRun(ctx, ctx.Stash.Status);
+                    else
+                        StatusText = $"Stash failed ({ctx.Stash.Status}) — retry {_stashFailCount}/{MaxStashFailures}";
                     break;
                 default:
                     StatusText = $"Between-wave stash: {ctx.Stash.Status}";
@@ -1152,7 +1190,7 @@ namespace AutoExile.Modes
             // Step 2: Stash items if inventory has stashable loot above threshold.
             // Excludes spare full Simulacrums (filter rejects them), so holding
             // fragments doesn't trigger an empty stash trip.
-            if (_state.StashPosition.HasValue)
+            if (_state.StashPosition.HasValue && !_stashUnavailableThisRun)
             {
                 int stashableCount = 0;
                 var slots = StashSystem.GetInventorySlotItems(gc);
