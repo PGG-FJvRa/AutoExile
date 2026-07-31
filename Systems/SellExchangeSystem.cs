@@ -252,6 +252,7 @@ namespace AutoExile.Systems
 
             // Build the queue from the picker options.
             var rows = new List<(string name, int qty, double total)>();
+            var unpriced = new List<(string name, int qty)>(); // owned but ninja returned no price (diagnostic)
             try
             {
                 foreach (var opt in picker.Options)
@@ -262,12 +263,14 @@ namespace AutoExile.Systems
                     int qty = ReadPickerQty((ExileCore.PoEMemory.Element)opt);
                     if (qty <= 0) continue;
                     double unit = UnitChaos(ctx, name);
-                    if (unit <= 0.0) continue;
+                    if (unit <= 0.0) { unpriced.Add((name, qty)); continue; }
                     double total = qty * unit;
                     if (total >= _thresholdChaos) rows.Add((name, qty, total));
                 }
             }
             catch { }
+
+            DumpUnpriced(ctx, unpriced);
 
             rows.Sort((a, b) => b.total.CompareTo(a.total));
             _queue.Clear();
@@ -1070,6 +1073,25 @@ namespace AutoExile.Systems
                 if (pr.MaxChaosValue > 0.0) return pr.MaxChaosValue;
             }
             return 0.0;
+        }
+
+        // Diagnostic: write the owned currencies ninja could NOT price to <NinjaCache>/sell_unpriced.txt
+        // (qty-sorted). Lets us see exactly which names aren't matching without any on-screen HUD.
+        private static void DumpUnpriced(BotContext ctx, List<(string name, int qty)> unpriced)
+        {
+            try
+            {
+                var dir = ctx.NinjaPrice?.CacheDir;
+                if (string.IsNullOrEmpty(dir)) return;
+                System.IO.Directory.CreateDirectory(dir);
+                unpriced.Sort((a, b) => b.qty.CompareTo(a.qty));
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine($"# {DateTime.Now:yyyy-MM-dd HH:mm:ss} — owned currencies ninja could not price ({unpriced.Count})");
+                foreach (var (name, qty) in unpriced)
+                    sb.AppendLine($"{qty}\t{name}");
+                System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "sell_unpriced.txt"), sb.ToString());
+            }
+            catch { }
         }
 
         private static int ReadPickerQty(ExileCore.PoEMemory.Element opt)
