@@ -63,7 +63,7 @@ namespace AutoExile.Systems
         private DateTime _ownedFilterAt = DateTime.MinValue;   // when the full search filter finished typing
         private int _searchAttempts;                           // focus+type retries for the current candidate
         private DateTime _lastTypeAt = DateTime.MinValue;
-        private const int TypeIntervalMs = 90;  // per-key type pace (fast but human ~11 keys/s); keys use PressKeyTyping
+        private const int TypeIntervalMs = 70;  // per-key type pace (~14 keys/s); keys use PressKeyTyping
         private const int OwnedSettleMinMs = 900;   // never focus earlier than the old proven floor (grid still rendering)
         private const int OwnedSettleMaxMs = 2500;  // …but never wait longer than this for the grid to go stable
         private const int FilterResultWaitMs = 900; // after typing, wait this long for the result cell to appear
@@ -970,7 +970,13 @@ namespace AutoExile.Systems
                 else break;
             }
             var s = sb.ToString().Trim();
-            return s.Length > 0 ? s : name;
+            if (s.Length == 0) s = name;
+            // Type all but the last two characters. The exchange filters on a prefix, so the target
+            // still shows up, and an incomplete entry looks less bot-like. Only trim when enough is
+            // left to stay specific (short names are typed in full).
+            if (s.Length > 5)
+                s = s.Substring(0, s.Length - 2).TrimEnd();
+            return s;
         }
 
         // Among all descendants whose normalized text contains 'name' with rect.Y in [minY, maxY],
