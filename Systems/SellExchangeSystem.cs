@@ -64,6 +64,7 @@ namespace AutoExile.Systems
         private int _searchAttempts;                           // focus+type retries for the current candidate
         private DateTime _lastTypeAt = DateTime.MinValue;
         private const int TypeIntervalMs = 70;  // per-key type pace (~14 keys/s); keys use PressKeyTyping
+        private const int ClickSettleMs = 380;  // wait after a focus-click for it to fully land (async ~250-300ms) before Ctrl+A/typing — the fast TypeIntervalMs is too short for this
         private const int OwnedSettleMinMs = 900;   // never focus earlier than the old proven floor (grid still rendering)
         private const int OwnedSettleMaxMs = 2500;  // …but never wait longer than this for the grid to go stable
         private const int FilterResultWaitMs = 900; // after typing, wait this long for the result cell to appear
@@ -587,7 +588,7 @@ namespace AutoExile.Systems
             }
             if (!_amountCleared)
             {
-                if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return;
+                if ((DateTime.Now - _lastClickAt).TotalMilliseconds < ClickSettleMs) return; // let the focus-click fully land first
                 BotInput.SelectAll();
                 _amountCleared = true;
                 _lastTypeAt = DateTime.Now;
@@ -627,7 +628,7 @@ namespace AutoExile.Systems
             }
             if (!_wantCleared)
             {
-                if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return;
+                if ((DateTime.Now - _lastClickAt).TotalMilliseconds < ClickSettleMs) return; // let the focus-click fully land first
                 BotInput.SelectAll();
                 _wantCleared = true;
                 _lastTypeAt = DateTime.Now;
@@ -758,7 +759,7 @@ namespace AutoExile.Systems
             }
             if (!selected)
             {
-                if ((DateTime.Now - _lastTypeAt).TotalMilliseconds < TypeIntervalMs) return false;
+                if ((DateTime.Now - _lastClickAt).TotalMilliseconds < ClickSettleMs) return false; // let the focus-click fully land first
                 BotInput.SelectAll();
                 selected = true;
                 _lastTypeAt = DateTime.Now;
