@@ -70,6 +70,15 @@ namespace AutoExile.Systems
         private bool _nodeSelected;
         private int _nodeClickAttempts;
 
+        // MONEY GUARD (auto-match flow): true once we've right-clicked ONE fragment
+        // (Simulacrum/boss/blight) into the device this activation. Prevents re-inserting a
+        // SECOND fragment when the device's "map loaded" detection is unreliable — without it,
+        // SelectMap re-enters every InsertSettleMs (and on every 30s phase-timeout restart),
+        // fails to see the fragment it just placed, and burns another one (two Simulacrums →
+        // two portal sets). Re-armed ONLY when a run actually starts (WaitForPortals) or on
+        // Cancel — NOT on Start(), so a stuck insert across restarts can't keep consuming.
+        private bool _fragmentInserted;
+
         // Inventory fragment fallback
         private int _invOpenAttempts;
         private const int MaxInvOpenAttempts = 5;
@@ -142,6 +151,7 @@ namespace AutoExile.Systems
             ScarabPaths = null;
             TargetMapName = null;
             MinMapTier = 0;
+            _fragmentInserted = false;
             Status = "Cancelled";
         }
 
@@ -379,6 +389,19 @@ namespace AutoExile.Systems
                 return MapDeviceResult.Failed;
             }
 
+            // MONEY GUARD: in the auto-match flow we place exactly ONE fragment. Once done,
+            // NEVER search for / right-click another — proceed to activate and trust the insert.
+            // The device's slot-0 / activate-button detection is unreliable, so without this the
+            // flow re-inserts a second Simulacrum (two portal sets). If the device never
+            // registers, we stall harmlessly instead of burning more fragments.
+            if (_fragmentInserted && !namedMapFlow)
+            {
+                _phase = NextPhaseAfterMapLoaded();
+                _phaseStartTime = DateTime.Now;
+                Status = "[Select] Fragment already placed — activating (no re-insert)";
+                return MapDeviceResult.InProgress;
+            }
+
             if (namedMapFlow)
             {
                 // Device panel must be visible before we can Ctrl+click insert
@@ -498,6 +521,7 @@ namespace AutoExile.Systems
                         if (inserted)
                         {
                             _lastActionTime = DateTime.Now;
+                            if (!namedMapFlow) _fragmentInserted = true; // cap auto-match to ONE fragment
                             Status = namedMapFlow
                                 ? $"[Select] Ctrl+clicking inventory map into {TargetMapName} slot"
                                 : "[Select] Right-clicking fragment from inventory";
@@ -538,6 +562,7 @@ namespace AutoExile.Systems
                 return MapDeviceResult.InProgress; // gate blocked, retry next tick
 
             _lastActionTime = DateTime.Now;
+            if (!useCtrlClick) _fragmentInserted = true; // cap auto-match to ONE fragment
             Status = useCtrlClick
                 ? $"[Select] Ctrl+clicking map into device"
                 : "[Select] Right-clicking fragment into device";
@@ -731,6 +756,10 @@ namespace AutoExile.Systems
 
         private MapDeviceResult TickWaitForPortals(GameController gc)
         {
+            // Activation succeeded — the fragment was consumed and a run is starting.
+            // Re-arm the money guard so the NEXT activation may place a fresh fragment.
+            _fragmentInserted = false;
+
             if ((DateTime.Now - _phaseStartTime).TotalSeconds > BasePortalWaitTimeoutSeconds + ExtraLatencySec)
             {
                 Status = "Timed out waiting for portals";
