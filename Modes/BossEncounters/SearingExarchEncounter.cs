@@ -40,7 +40,13 @@ namespace AutoExile.Modes.BossEncounters
         public bool UsesPreloadedMapDevice => true;
         public bool UsesAutoMatchCtrlClick => true;
 
-        public IReadOnlyList<string> MustLootItems { get; } = new[] { "Forbidden Flame" };
+        // Exarch's Forbidden Flame drops unidentified, so its ground label is the
+        // base item name rather than the unique name. Keep both labels whitelisted.
+        public IReadOnlyList<string> MustLootItems { get; } = new[]
+        {
+            "Forbidden Flame",
+            "Crimson Jewel",
+        };
 
         // Walk to the arena center/explore while the boss is not yet visible instead
         // of allowing normal combat to idle at the entry portal.
