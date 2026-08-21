@@ -38,6 +38,7 @@ namespace AutoExile.Modes.BossEncounters
         // Incandescent Invitations must be loaded manually before starting Boss mode.
         // MapDeviceSystem detects the loaded item through its active Activate button.
         public bool UsesPreloadedMapDevice => true;
+        public bool UsesAutoMatchCtrlClick => true;
 
         public IReadOnlyList<string> MustLootItems { get; } = new[] { "Forbidden Flame" };
 

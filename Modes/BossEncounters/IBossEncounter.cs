@@ -38,6 +38,10 @@ namespace AutoExile.Modes.BossEncounters
         /// BossMode then skips fragment withdrawal and activates the already-loaded device.</summary>
         bool UsesPreloadedMapDevice => false;
 
+        /// <summary>Use the invitation workflow: right-click to select its Atlas location,
+        /// then Ctrl-click it into that selected map-device slot.</summary>
+        bool UsesAutoMatchCtrlClick => false;
+
         /// <summary>Item names to always pick up during this encounter, regardless of value.
         /// Substring match, case-insensitive. Empty = no overrides.</summary>
         IReadOnlyList<string> MustLootItems => Array.Empty<string>();

@@ -37,6 +37,7 @@ namespace AutoExile.Modes.Shared
         // Scarab path substrings to insert into the map device after the map is loaded.
         // Set by Wave Farming; null/empty for Boss/Sim (they don't use scarabs).
         private IReadOnlyList<string>? _scarabPaths;
+        private bool _forceCtrlClick;
 
         private const float BasePortalTimeoutSeconds = 15f;
         private const float MapDeviceRetrySeconds = 10f;
@@ -59,7 +60,8 @@ namespace AutoExile.Modes.Shared
             int fragmentStock = 0,
             int minFragments = 1,
             IReadOnlyList<(string PathSubstring, int Count)>? withdrawList = null,
-            IReadOnlyList<string>? scarabPaths = null)
+            IReadOnlyList<string>? scarabPaths = null,
+            bool forceCtrlClick = false)
         {
             _mapFilter = mapFilter;
             _stashItemFilter = stashItemFilter;
@@ -74,6 +76,7 @@ namespace AutoExile.Modes.Shared
             _minFragments = minFragments;
             _withdrawList = withdrawList != null && withdrawList.Count > 0 ? withdrawList : null;
             _scarabPaths = scarabPaths != null && scarabPaths.Count > 0 ? scarabPaths : null;
+            _forceCtrlClick = forceCtrlClick;
             _phase = HideoutPhase.Settle;
             _phaseStartTime = DateTime.Now;
             Status = "Hideout — settling";
@@ -126,6 +129,7 @@ namespace AutoExile.Modes.Shared
             _minFragments = 1;
             _withdrawList = null;
             _scarabPaths = null;
+            _forceCtrlClick = false;
             Status = "";
         }
 
@@ -261,6 +265,7 @@ namespace AutoExile.Modes.Shared
 
             ctx.MapDevice.TargetMapName = _targetMapName;
             ctx.MapDevice.MinMapTier = _minMapTier;
+            ctx.MapDevice.ForceCtrlClick = _forceCtrlClick;
 
             if (_mapFilter != null && !ctx.MapDevice.Start(_mapFilter, _inventoryFragmentPath, _scarabPaths))
                 Status = $"MapDevice.Start failed (phase={ctx.MapDevice.Phase})";

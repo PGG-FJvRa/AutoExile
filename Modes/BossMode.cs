@@ -291,7 +291,8 @@ namespace AutoExile.Modes
                 _hideoutFlow.Start(_activeEncounter.MapFilter,
                     stashItemFilter: GetStashFilter(),
                     stashItemThreshold: runSettings.StashItemThreshold.Value,
-                    dumpTabName: string.IsNullOrWhiteSpace(stashSettings.DumpTabName.Value) ? null : stashSettings.DumpTabName.Value);
+                    dumpTabName: string.IsNullOrWhiteSpace(stashSettings.DumpTabName.Value) ? null : stashSettings.DumpTabName.Value,
+                    forceCtrlClick: _activeEncounter.UsesAutoMatchCtrlClick);
                 Status = $"Hideout — activate preloaded {_activeEncounter.Name}";
                 return;
             }

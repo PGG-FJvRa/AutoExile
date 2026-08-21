@@ -78,6 +78,7 @@ namespace AutoExile.Systems
         // two portal sets). Re-armed ONLY when a run actually starts (WaitForPortals) or on
         // Cancel — NOT on Start(), so a stuck insert across restarts can't keep consuming.
         private bool _fragmentInserted;
+        private bool _autoMatchNodePinned;
 
         // Inventory fragment fallback
         private int _invOpenAttempts;
@@ -137,6 +138,7 @@ namespace AutoExile.Systems
             _nodeClickAttempts = 0;
             _invOpenAttempts = 0;
             _portalFirstSeenAt = null;
+            _autoMatchNodePinned = false;
             Status = "Starting map creation";
             return true;
         }
@@ -152,6 +154,7 @@ namespace AutoExile.Systems
             TargetMapName = null;
             MinMapTier = 0;
             _fragmentInserted = false;
+            _autoMatchNodePinned = false;
             Status = "Cancelled";
         }
 
@@ -382,13 +385,6 @@ namespace AutoExile.Systems
             // ForceCtrlClick prevents accidental right-click on map keys (farming mode without map name selected)
             bool namedMapFlow = !string.IsNullOrEmpty(TargetMapName);
 
-            if (!namedMapFlow && ForceCtrlClick)
-            {
-                Status = "[Select] No map name configured — select a map in farming settings";
-                _phase = MapDevicePhase.Idle;
-                return MapDeviceResult.Failed;
-            }
-
             // MONEY GUARD: in the auto-match flow we place exactly ONE fragment. Once done,
             // NEVER search for / right-click another — proceed to activate and trust the insert.
             // The device's slot-0 / activate-button detection is unreliable, so without this the
@@ -554,6 +550,17 @@ namespace AutoExile.Systems
 
             // Named map or ForceCtrlClick (farming): Ctrl+click to insert into device slot.
             // Auto-match (boss fragments only): Right-click to auto-select node + insert.
+            // Some special invitations require two actions: right-click first to
+            // pinpoint their Atlas location, then Ctrl-click to load into that slot.
+            if (!namedMapFlow && ForceCtrlClick && !_autoMatchNodePinned)
+            {
+                if (!BotInput.RightClick(absPos)) return MapDeviceResult.InProgress;
+                _autoMatchNodePinned = true;
+                _lastActionTime = DateTime.Now;
+                Status = "[Select] Right-clicking invitation to pinpoint Atlas location";
+                return MapDeviceResult.InProgress;
+            }
+
             bool useCtrlClick = namedMapFlow || ForceCtrlClick;
             bool clicked = useCtrlClick
                 ? BotInput.CtrlClick(absPos)
@@ -562,7 +569,7 @@ namespace AutoExile.Systems
                 return MapDeviceResult.InProgress; // gate blocked, retry next tick
 
             _lastActionTime = DateTime.Now;
-            if (!useCtrlClick) _fragmentInserted = true; // cap auto-match to ONE fragment
+            if (!namedMapFlow) _fragmentInserted = true; // cap auto-match to ONE fragment
             Status = useCtrlClick
                 ? $"[Select] Ctrl+clicking map into device"
                 : "[Select] Right-clicking fragment into device";
