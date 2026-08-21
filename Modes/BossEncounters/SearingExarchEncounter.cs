@@ -26,12 +26,11 @@ namespace AutoExile.Modes.BossEncounters
         private const string DescensionAltarPath = "CleansingFireDescensionObject";
         private const float LootScanIntervalMs = 500f;
 
-        public Func<Element, bool> MapFilter => el =>
-        {
-            var path = el.Entity?.Path;
-            return path?.Contains(FragmentPath, StringComparison.OrdinalIgnoreCase) == true
-                || path?.Contains(LegacyFragmentPath, StringComparison.OrdinalIgnoreCase) == true;
-        };
+        // Invitations manually placed into the map device's map stash do not expose
+        // consistent item metadata. This encounter is explicitly preloaded, so use
+        // the first available map-stash item and let the game's right-click action
+        // select the invitation node and load it into the device.
+        public Func<Element, bool> MapFilter => _ => true;
 
         public string? InventoryFragmentPath => FragmentPath;
         public int FragmentCost => 1;
@@ -131,7 +130,7 @@ namespace AutoExile.Modes.BossEncounters
                 case ExarchPhase.WaitingForBoss:
                     return TickWaitingForBoss(ctx, gc, playerGrid);
                 case ExarchPhase.Fighting:
-                    return TickFighting(ctx);
+                    return TickFighting(ctx, gc, playerGrid);
                 case ExarchPhase.WaitingForLoot:
                     return TickWaitingForLoot(ctx, gc, playerGrid);
                 default:
@@ -173,7 +172,7 @@ namespace AutoExile.Modes.BossEncounters
             return BossEncounterResult.InProgress;
         }
 
-        private BossEncounterResult TickFighting(BotContext ctx)
+        private BossEncounterResult TickFighting(BotContext ctx, GameController gc, Vector2 playerGrid)
         {
             if ((DateTime.Now - _phaseStartTime).TotalSeconds > 600)
             {
@@ -196,10 +195,22 @@ namespace AutoExile.Modes.BossEncounters
                 return BossEncounterResult.InProgress;
             }
 
+            // The combat system only repositions after it has an in-range target.
+            // Exarch can stream in outside that range, so explicitly close the gap
+            // first and then allow normal combat positioning to take over.
+            var bossGrid = _bossEntity.GridPosNum;
+            var distance = Vector2.Distance(playerGrid, bossGrid);
+            if (distance > 45 && !ctx.Navigation.IsNavigating)
+            {
+                ctx.Navigation.NavigateTo(gc, bossGrid);
+                Status = $"Approaching Searing Exarch ({distance:F0}g)";
+                return BossEncounterResult.InProgress;
+            }
+
             var life = _bossEntity.GetComponent<ExileCore.PoEMemory.Components.Life>();
             var hpPct = life != null ? life.CurHP * 100 / Math.Max(1, life.MaxHP) : 0;
             Status = _bossEntity.IsTargetable
-                ? $"Fighting Searing Exarch — HP:{hpPct}%"
+                ? $"Fighting Searing Exarch — HP:{hpPct}% dist={distance:F0}g"
                 : "Searing Exarch invulnerable — waiting";
             return BossEncounterResult.InProgress;
         }
