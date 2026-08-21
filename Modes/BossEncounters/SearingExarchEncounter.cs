@@ -18,14 +18,20 @@ namespace AutoExile.Modes.BossEncounters
         public string Name => "Searing Exarch";
         public string Status { get; private set; } = "";
 
-        // Incandescent Invitation. The Uber invitation is CurrencyUberBossKeyRed.
-        private const string FragmentPath = "CurrencyBossKeyRed";
+        // Incandescent Invitation. The normal key uses the Eldritch metadata path;
+        // CurrencyUberBossKeyRed is the separate Uber invitation.
+        private const string FragmentPath = "CurrencyEldritchBossKey";
+        private const string LegacyFragmentPath = "CurrencyBossKeyRed";
         private const string BossPath = "CleansingFireBoss";
         private const string DescensionAltarPath = "CleansingFireDescensionObject";
         private const float LootScanIntervalMs = 500f;
 
         public Func<Element, bool> MapFilter => el =>
-            el.Entity?.Path?.Contains(FragmentPath, StringComparison.OrdinalIgnoreCase) == true;
+        {
+            var path = el.Entity?.Path;
+            return path?.Contains(FragmentPath, StringComparison.OrdinalIgnoreCase) == true
+                || path?.Contains(LegacyFragmentPath, StringComparison.OrdinalIgnoreCase) == true;
+        };
 
         public string? InventoryFragmentPath => FragmentPath;
         public int FragmentCost => 1;
