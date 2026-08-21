@@ -182,6 +182,7 @@ namespace AutoExile
             _bossMode.Register(new OshabiEncounter());
             _bossMode.Register(new FearEncounter());
             _bossMode.Register(new NormalFearEncounter());
+            _bossMode.Register(new SearingExarchEncounter());
             _bossMode.Register(new MavenEncounter());
             _bossMode.Register(new SareshEncounter());
             RegisterMode(_bossMode);
