@@ -36,6 +36,10 @@ namespace AutoExile.Modes.BossEncounters
         public string? InventoryFragmentPath => FragmentPath;
         public int FragmentCost => 1;
 
+        // Incandescent Invitations must be loaded manually before starting Boss mode.
+        // MapDeviceSystem detects the loaded item through its active Activate button.
+        public bool UsesPreloadedMapDevice => true;
+
         public IReadOnlyList<string> MustLootItems { get; } = new[] { "Forbidden Flame" };
 
         // Do not allow combat positioning to pull the character away while loot is dropping.

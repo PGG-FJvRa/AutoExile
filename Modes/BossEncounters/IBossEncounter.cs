@@ -34,6 +34,10 @@ namespace AutoExile.Modes.BossEncounters
         /// <summary>Number of fragments consumed per map open. Used to stop when inventory is insufficient.</summary>
         int FragmentCost => 1;
 
+        /// <summary>True when the player loads this encounter's item into the map device manually.
+        /// BossMode then skips fragment withdrawal and activates the already-loaded device.</summary>
+        bool UsesPreloadedMapDevice => false;
+
         /// <summary>Item names to always pick up during this encounter, regardless of value.
         /// Substring match, case-insensitive. Empty = no overrides.</summary>
         IReadOnlyList<string> MustLootItems => Array.Empty<string>();

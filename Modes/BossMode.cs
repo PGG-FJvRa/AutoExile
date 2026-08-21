@@ -282,6 +282,20 @@ namespace AutoExile.Modes
             var bossSettings = ctx.Settings.Boss;
             var stashSettings = ctx.Settings.Stash;
             var runSettings = ctx.Settings.Run;
+
+            // Some special invitations are loaded manually into the map device. Do not
+            // require a matching inventory/stash path in that case: MapDeviceSystem
+            // sees the active Activate button and launches the already-loaded item.
+            if (_activeEncounter!.UsesPreloadedMapDevice)
+            {
+                _hideoutFlow.Start(_activeEncounter.MapFilter,
+                    stashItemFilter: GetStashFilter(),
+                    stashItemThreshold: runSettings.StashItemThreshold.Value,
+                    dumpTabName: string.IsNullOrWhiteSpace(stashSettings.DumpTabName.Value) ? null : stashSettings.DumpTabName.Value);
+                Status = $"Hideout — activate preloaded {_activeEncounter.Name}";
+                return;
+            }
+
             _hideoutFlow.Start(_activeEncounter!.MapFilter,
                 stashItemFilter: GetStashFilter(),
                 inventoryFragmentPath: _activeEncounter.InventoryFragmentPath,
