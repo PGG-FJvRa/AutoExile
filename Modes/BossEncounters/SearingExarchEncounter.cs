@@ -42,6 +42,10 @@ namespace AutoExile.Modes.BossEncounters
 
         public IReadOnlyList<string> MustLootItems { get; } = new[] { "Forbidden Flame" };
 
+        // Walk to the arena center/explore while the boss is not yet visible instead
+        // of allowing normal combat to idle at the entry portal.
+        public bool SuppressCombat => _phase == ExarchPhase.WaitingForBoss;
+
         // Do not allow combat positioning to pull the character away while loot is dropping.
         public bool SuppressCombatPositioning => _phase == ExarchPhase.WaitingForLoot;
 
@@ -104,16 +108,28 @@ namespace AutoExile.Modes.BossEncounters
                 && _bossEntity.IsAlive
                 && !_bossEntity.IsTargetable;
 
-            if (_phase != ExarchPhase.WaitingForLoot && _bossWasAlive &&
-                ((_bossEntity != null && !_bossEntity.IsAlive) || IsDescensionAltarVisible(gc)))
+            if (_phase != ExarchPhase.WaitingForLoot &&
+                ((_bossWasAlive && _bossEntity != null && !_bossEntity.IsAlive) ||
+                IsDescensionAltarVisible(gc)))
             {
                 StartLootSweep(ctx, "Kill detected");
+            }
+
+            // Fallback for game versions where Exarch's monster metadata differs
+            // from the expected path: after the arena has been searched, boss loot
+            // is still an authoritative indication that the fight is over.
+            if (_phase == ExarchPhase.WaitingForBoss &&
+                (DateTime.Now - _phaseStartTime).TotalSeconds > 10)
+            {
+                ctx.Loot.Scan(gc);
+                if (ctx.Loot.HasLootNearby)
+                    StartLootSweep(ctx, "Post-fight loot detected");
             }
 
             switch (_phase)
             {
                 case ExarchPhase.WaitingForBoss:
-                    return TickWaitingForBoss(ctx);
+                    return TickWaitingForBoss(ctx, gc, playerGrid);
                 case ExarchPhase.Fighting:
                     return TickFighting(ctx);
                 case ExarchPhase.WaitingForLoot:
@@ -123,7 +139,7 @@ namespace AutoExile.Modes.BossEncounters
             }
         }
 
-        private BossEncounterResult TickWaitingForBoss(BotContext ctx)
+        private BossEncounterResult TickWaitingForBoss(BotContext ctx, GameController gc, Vector2 playerGrid)
         {
             if ((DateTime.Now - _phaseStartTime).TotalSeconds > 90)
             {
@@ -136,6 +152,19 @@ namespace AutoExile.Modes.BossEncounters
                 _phase = ExarchPhase.Fighting;
                 _phaseStartTime = DateTime.Now;
                 ctx.Log("[Exarch] Boss found — fighting");
+            }
+
+            // The arena initially has no targetable boss near the portal. Sweep the
+            // navigation grid toward its unexplored center until Exarch streams in.
+            if (_phase == ExarchPhase.WaitingForBoss && !ctx.Navigation.IsNavigating)
+            {
+                var target = ctx.Exploration.GetNextExplorationTarget(playerGrid);
+                if (target.HasValue)
+                {
+                    ctx.Navigation.NavigateTo(gc, target.Value);
+                    Status = $"Searching arena for Searing Exarch ({Vector2.Distance(playerGrid, target.Value):F0}g)";
+                    return BossEncounterResult.InProgress;
+                }
             }
 
             Status = _bossEntity?.IsTargetable == false
@@ -242,12 +271,25 @@ namespace AutoExile.Modes.BossEncounters
         {
             try
             {
+                Entity? soleUnique = null;
                 foreach (var entity in gc.EntityListWrapper.ValidEntitiesByType[EntityType.Monster])
                 {
-                    if (entity.IsHostile && entity.Rarity == MonsterRarity.Unique &&
-                        entity.Path?.Contains(BossPath, StringComparison.OrdinalIgnoreCase) == true)
+                    if (!entity.IsHostile || entity.Rarity != MonsterRarity.Unique)
+                        continue;
+
+                    var path = entity.Path ?? "";
+                    var name = entity.RenderName ?? "";
+                    if (path.Contains(BossPath, StringComparison.OrdinalIgnoreCase) ||
+                        path.Contains("CleansingFire", StringComparison.OrdinalIgnoreCase) ||
+                        path.Contains("Exarch", StringComparison.OrdinalIgnoreCase) ||
+                        name.Contains("Exarch", StringComparison.OrdinalIgnoreCase))
                         return entity;
+
+                    // The boss arena normally exposes just one hostile Unique. Keep
+                    // it as a final compatibility fallback if the metadata changes.
+                    soleUnique ??= entity;
                 }
+                return soleUnique;
             }
             catch (IndexOutOfRangeException) { }
             return null;
