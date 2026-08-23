@@ -1,6 +1,7 @@
 using ExileCore;
 using ExileCore.PoEMemory;
 using ExileCore.PoEMemory.MemoryObjects;
+using ExileCore.PoEMemory.Components;
 using ExileCore.Shared.Enums;
 using AutoExile.Systems;
 using System.Numerics;
@@ -52,11 +53,9 @@ namespace AutoExile.Modes.BossEncounters
         // During Exarch's ball/invulnerability transitions the entity remains present
         // but is not targetable. Hold position rather than chasing its transition path.
         // Also do not allow combat positioning to pull the character during loot.
-        public bool SuppressCombatPositioning => _phase == ExarchPhase.WaitingForLoot ||
-            (_phase == ExarchPhase.Fighting && _bossEntity?.IsAlive == true && !_bossEntity.IsTargetable);
+        public bool SuppressCombatPositioning => _phase == ExarchPhase.WaitingForLoot || _isInvulnerablePhase;
 
-        public bool SuppressDodge => _phase == ExarchPhase.Fighting &&
-            _bossEntity?.IsAlive == true && !_bossEntity.IsTargetable;
+        public bool SuppressDodge => _isInvulnerablePhase;
 
         private ExarchPhase _phase = ExarchPhase.Idle;
         private DateTime _phaseStartTime;
@@ -65,6 +64,7 @@ namespace AutoExile.Modes.BossEncounters
         private Vector2? _bossDeathPos;
         private DateTime _bossLastSeenAt;
         private DateTime _lastLootScan;
+        private bool _isInvulnerablePhase;
 
         private enum ExarchPhase
         {
@@ -92,6 +92,7 @@ namespace AutoExile.Modes.BossEncounters
             _bossDeathPos = null;
             _bossLastSeenAt = DateTime.MinValue;
             _lastLootScan = DateTime.MinValue;
+            _isInvulnerablePhase = false;
             Status = "Entered arena — waiting for Searing Exarch";
             ctx.Log("[Exarch] Zone entered");
         }
@@ -113,9 +114,9 @@ namespace AutoExile.Modes.BossEncounters
                     _bossWasAlive = true;
             }
 
-            ctx.Combat.BossInvulnerable = _bossEntity != null
-                && _bossEntity.IsAlive
-                && !_bossEntity.IsTargetable;
+            _isInvulnerablePhase = IsInvulnerablePhase(_bossEntity);
+
+            ctx.Combat.BossInvulnerable = _isInvulnerablePhase;
 
             if (_phase != ExarchPhase.WaitingForLoot &&
                 ((_bossWasAlive && _bossEntity != null && !_bossEntity.IsAlive) ||
@@ -205,11 +206,11 @@ namespace AutoExile.Modes.BossEncounters
                 return BossEncounterResult.InProgress;
             }
 
-            if (!_bossEntity.IsTargetable)
+            if (_isInvulnerablePhase)
             {
                 if (ctx.Navigation.IsNavigating)
                     ctx.Navigation.Stop(gc);
-                Status = "Searing Exarch ball phase — holding position";
+                Status = "Searing Exarch ball/invulnerability phase — holding position";
                 return BossEncounterResult.InProgress;
             }
 
@@ -324,6 +325,34 @@ namespace AutoExile.Modes.BossEncounters
             return null;
         }
 
+        private static bool IsInvulnerablePhase(Entity? boss)
+        {
+            if (boss == null || !boss.IsAlive)
+                return false;
+            if (!boss.IsTargetable)
+                return true;
+
+            // Targetability remains true for some Exarch ball transitions. The
+            // state machine's life-bar flag is the reliable combat-side signal:
+            // normal DPS is allowed only while it is positive. Also accept any
+            // explicitly named ball/invulnerability state for metadata variants.
+            if (boss.TryGetComponent<StateMachine>(out var stateMachine) && stateMachine?.States != null)
+            {
+                foreach (var state in stateMachine.States)
+                {
+                    var name = state.Name ?? string.Empty;
+                    if (name.Equals("boss_life_bar", StringComparison.OrdinalIgnoreCase) && state.Value <= 0)
+                        return true;
+                    if (state.Value > 0 &&
+                        (name.Contains("ball", StringComparison.OrdinalIgnoreCase) ||
+                         name.Contains("invulner", StringComparison.OrdinalIgnoreCase)))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
         private static bool IsDescensionAltarVisible(GameController gc)
         {
             try
@@ -342,6 +371,7 @@ namespace AutoExile.Modes.BossEncounters
             _bossDeathPos = null;
             _bossLastSeenAt = DateTime.MinValue;
             _lastLootScan = DateTime.MinValue;
+            _isInvulnerablePhase = false;
             Status = "";
         }
     }
