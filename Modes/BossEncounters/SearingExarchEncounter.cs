@@ -26,17 +26,13 @@ namespace AutoExile.Modes.BossEncounters
         private const string DescensionAltarPath = "CleansingFireDescensionObject";
         private const float LootScanIntervalMs = 500f;
 
-        // Invitations manually placed into the map device's map stash do not expose
-        // consistent item metadata. This encounter is explicitly preloaded, so use
-        // the first available map-stash item and let the game's right-click action
-        // select the invitation node and load it into the device.
+        // The active load flow prefers the player inventory by base name; retain a
+        // permissive stash filter only as a compatibility fallback.
         public Func<Element, bool> MapFilter => _ => true;
 
         public string? InventoryFragmentPath => FragmentPath;
         public int FragmentCost => 1;
 
-        // Incandescent Invitations must be loaded manually before starting Boss mode.
-        // MapDeviceSystem detects the loaded item through its active Activate button.
         public bool UsesPreloadedMapDevice => true;
         public bool UsesAutoMatchCtrlClick => true;
 

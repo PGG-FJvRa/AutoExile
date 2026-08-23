@@ -28,6 +28,8 @@ namespace AutoExile.Modes.Shared
         private string? _withdrawFragmentPath;
         private int _fragmentStock; // target number of fragments to maintain in inventory
         private int _minFragments; // minimum fragments needed to open (0 = any amount works)
+        private bool _withdrawAnyItem;
+        private Func<ServerInventory.InventSlotItem, bool>? _inventoryResourceFilter;
 
         // Multi-item withdrawal (Wave Farming uses this for scarabs + portal scrolls
         // + maps in one stash trip). Mutually exclusive with the single _withdrawFragmentPath
@@ -61,7 +63,9 @@ namespace AutoExile.Modes.Shared
             int minFragments = 1,
             IReadOnlyList<(string PathSubstring, int Count)>? withdrawList = null,
             IReadOnlyList<string>? scarabPaths = null,
-            bool forceCtrlClick = false)
+            bool forceCtrlClick = false,
+            bool withdrawAnyItem = false,
+            Func<ServerInventory.InventSlotItem, bool>? inventoryResourceFilter = null)
         {
             _mapFilter = mapFilter;
             _stashItemFilter = stashItemFilter;
@@ -74,6 +78,8 @@ namespace AutoExile.Modes.Shared
             _withdrawFragmentPath = withdrawFragmentPath;
             _fragmentStock = fragmentStock;
             _minFragments = minFragments;
+            _withdrawAnyItem = withdrawAnyItem;
+            _inventoryResourceFilter = inventoryResourceFilter;
             _withdrawList = withdrawList != null && withdrawList.Count > 0 ? withdrawList : null;
             _scarabPaths = scarabPaths != null && scarabPaths.Count > 0 ? scarabPaths : null;
             _forceCtrlClick = forceCtrlClick;
@@ -127,6 +133,8 @@ namespace AutoExile.Modes.Shared
             _withdrawFragmentPath = null;
             _fragmentStock = 0;
             _minFragments = 1;
+            _withdrawAnyItem = false;
+            _inventoryResourceFilter = null;
             _withdrawList = null;
             _scarabPaths = null;
             _forceCtrlClick = false;
@@ -179,7 +187,11 @@ namespace AutoExile.Modes.Shared
             bool needSingleWithdraw = canWithdraw && fragmentsInInventory < minNeeded;
             int withdrawNeeded = needSingleWithdraw ? _fragmentStock : 0;
             bool needMultiWithdraw = activeWithdrawList != null;
-            bool needWithdraw = needSingleWithdraw || needMultiWithdraw;
+            bool hasResourceInInventory = _inventoryResourceFilter != null &&
+                StashSystem.GetInventorySlotItems(ctx.Game)?.Any(_inventoryResourceFilter) == true;
+            bool needAnyWithdraw = _withdrawAnyItem && !hasResourceInInventory &&
+                !string.IsNullOrEmpty(_resourceTabName);
+            bool needWithdraw = needSingleWithdraw || needMultiWithdraw || needAnyWithdraw;
 
             // Not enough fragments and no way to get more — signal stop (only for modes that use fragments)
             if (usesFragments && fragmentsInInventory < minNeeded && !canWithdraw)
@@ -205,10 +217,12 @@ namespace AutoExile.Modes.Shared
                     withdrawFragmentPath: needMultiWithdraw ? null : (needSingleWithdraw ? _withdrawFragmentPath : null),
                     withdrawCount:        needMultiWithdraw ? 0    : withdrawNeeded,
                     itemFilter:           needStore ? _stashItemFilter : (_ => false),
-                    withdrawList:         activeWithdrawList);
+                    withdrawList:         activeWithdrawList,
+                    withdrawAnyItem:      needAnyWithdraw);
                 var parts = new List<string>();
                 if (needSingleWithdraw) parts.Add($"withdraw {withdrawNeeded} fragments");
                 if (needMultiWithdraw)  parts.Add($"withdraw {totalNeededFromList} items ({activeWithdrawList!.Count} types)");
+                if (needAnyWithdraw)    parts.Add("withdraw one fragment-tab item");
                 if (needStore) parts.Add($"stash {lootItems} loot items");
                 Status = string.Join(" & ", parts);
                 return HideoutSignal.InProgress;

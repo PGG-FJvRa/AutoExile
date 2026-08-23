@@ -292,7 +292,11 @@ namespace AutoExile.Modes
                     stashItemFilter: GetStashFilter(),
                     stashItemThreshold: runSettings.StashItemThreshold.Value,
                     dumpTabName: string.IsNullOrWhiteSpace(stashSettings.DumpTabName.Value) ? null : stashSettings.DumpTabName.Value,
-                    forceCtrlClick: _activeEncounter.UsesAutoMatchCtrlClick);
+                    resourceTabName: string.IsNullOrWhiteSpace(stashSettings.FragmentTabName.Value) ? null : stashSettings.FragmentTabName.Value,
+                    forceCtrlClick: _activeEncounter.UsesAutoMatchCtrlClick,
+                    withdrawAnyItem: true,
+                    inventoryResourceFilter: item => item.Item?.GetComponent<ExileCore.PoEMemory.Components.Base>()?.Name
+                        .Equals("Incandescent Invitation", StringComparison.OrdinalIgnoreCase) == true);
                 Status = $"Hideout — activate preloaded {_activeEncounter.Name}";
                 return;
             }

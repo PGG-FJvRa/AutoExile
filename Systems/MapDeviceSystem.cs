@@ -95,6 +95,12 @@ namespace AutoExile.Systems
 
         // Portal spawn settle
         private DateTime? _portalFirstSeenAt;
+        private int _portalSearchIndex;
+        private DateTime _lastPortalSearchMove = DateTime.MinValue;
+        private static readonly Vector2[] PortalSearchOffsets =
+        {
+            new(40, 0), new(0, 40), new(-40, 0), new(0, -40),
+        };
 
         private bool CanAct() =>
             BotInput.CanAct && (DateTime.Now - _lastActionTime).TotalMilliseconds >= ActionCooldownMs;
@@ -138,6 +144,8 @@ namespace AutoExile.Systems
             _nodeClickAttempts = 0;
             _invOpenAttempts = 0;
             _portalFirstSeenAt = null;
+            _portalSearchIndex = 0;
+            _lastPortalSearchMove = DateTime.MinValue;
             _autoMatchNodePinned = false;
             Status = "Starting map creation";
             return true;
@@ -511,7 +519,16 @@ namespace AutoExile.Systems
                         var absPos2 = new Vector2(windowRect2.X + slotRect.Center.X,
                             windowRect2.Y + slotRect.Center.Y);
 
-                        bool inserted = namedMapFlow
+                        if (!namedMapFlow && ForceCtrlClick && !_autoMatchNodePinned)
+                        {
+                            if (!BotInput.RightClick(absPos2)) return MapDeviceResult.InProgress;
+                            _autoMatchNodePinned = true;
+                            _lastActionTime = DateTime.Now;
+                            Status = "[Select] Right-clicking inventory invitation to pinpoint Atlas location";
+                            return MapDeviceResult.InProgress;
+                        }
+
+                        bool inserted = namedMapFlow || ForceCtrlClick
                             ? BotInput.CtrlClick(absPos2)
                             : BotInput.RightClick(absPos2);
                         if (inserted)
@@ -520,7 +537,9 @@ namespace AutoExile.Systems
                             if (!namedMapFlow) _fragmentInserted = true; // cap auto-match to ONE fragment
                             Status = namedMapFlow
                                 ? $"[Select] Ctrl+clicking inventory map into {TargetMapName} slot"
-                                : "[Select] Right-clicking fragment from inventory";
+                                : ForceCtrlClick
+                                    ? "[Select] Ctrl+clicking inventory invitation into device"
+                                    : "[Select] Right-clicking fragment from inventory";
                         }
                         return MapDeviceResult.InProgress;
                     }
@@ -859,9 +878,24 @@ namespace AutoExile.Systems
                 var portal = FindNearestPortal(gc);
                 if (portal == null)
                 {
-                    Status = "Portal disappeared";
-                    _phase = MapDevicePhase.Idle;
-                    return MapDeviceResult.Failed;
+                    // Portals can spawn outside the current entity bubble. Sweep a
+                    // small ring around the device to stream them in instead of
+                    // failing while walking toward a stale/incorrect position.
+                    if ((DateTime.Now - _lastPortalSearchMove).TotalSeconds >= 2)
+                    {
+                        var device = FindMapDevice(gc);
+                        if (device != null && !nav.IsNavigating)
+                        {
+                            var target = device.GridPosNum + PortalSearchOffsets[_portalSearchIndex++ % PortalSearchOffsets.Length];
+                            nav.NavigateTo(gc, target);
+                            _lastPortalSearchMove = DateTime.Now;
+                            Status = $"[Enter] Searching around map device for portal ({_portalSearchIndex}/{PortalSearchOffsets.Length})";
+                            return MapDeviceResult.InProgress;
+                        }
+                    }
+
+                    Status = "[Enter] Searching for portal...";
+                    return MapDeviceResult.InProgress;
                 }
 
                 Interaction.InteractWithEntity(portal, nav, requireProximity: true);

@@ -60,6 +60,9 @@ namespace AutoExile.Systems
         /// <summary>How many fragments to withdraw (ctrl+clicks). Each click withdraws one stack unit.</summary>
         public int WithdrawCount { get; set; }
 
+        /// <summary>Withdraw the first visible item from the configured withdraw tab.</summary>
+        public bool WithdrawAnyItem { get; set; }
+
         /// <summary>
         /// Multi-item withdrawal queue. Processed sequentially within the same stash
         /// session: switch to <see cref="WithdrawTabName"/> once, then for each entry
@@ -77,6 +80,7 @@ namespace AutoExile.Systems
         private StashPhase _afterTabSwitch;
         private int _withdrawsRemaining;
         private int _withdrawListIndex; // which entry of WithdrawList we're processing
+        private bool _anyWithdrawCompleted;
 
         // Incubator state
         private bool _cursorHasIncubator;
@@ -100,7 +104,8 @@ namespace AutoExile.Systems
             string? withdrawFragmentPath = null,
             int withdrawCount = 0,
             Func<ServerInventory.InventSlotItem, bool>? itemFilter = null,
-            IReadOnlyList<(string PathSubstring, int Count)>? withdrawList = null)
+            IReadOnlyList<(string PathSubstring, int Count)>? withdrawList = null,
+            bool withdrawAnyItem = false)
         {
             if (_phase != StashPhase.Idle)
                 return false;
@@ -110,6 +115,7 @@ namespace AutoExile.Systems
             WithdrawTabName      = withdrawTabName;
             WithdrawFragmentPath = withdrawFragmentPath;
             WithdrawCount        = withdrawCount;
+            WithdrawAnyItem      = withdrawAnyItem;
             ItemFilter           = itemFilter;
 
             // Multi-item path: if a list is supplied, that wins over the single-item
@@ -121,6 +127,7 @@ namespace AutoExile.Systems
                     if (w.Count > 0 && !string.IsNullOrWhiteSpace(w.PathSubstring))
                         WithdrawList.Add((w.PathSubstring, w.Count));
             _withdrawListIndex = 0;
+            _anyWithdrawCompleted = false;
 
             _phase = StashPhase.NavigateToStash;
             _phaseStartTime = DateTime.Now;
@@ -469,6 +476,34 @@ namespace AutoExile.Systems
             // second batch while one is mid-flight or it'll race with Ctrl release.
             if (BotInput.IsBatchRunning)
                 return StashResult.InProgress;
+
+            if (WithdrawAnyItem)
+            {
+                if (_anyWithdrawCompleted)
+                {
+                    EnterStorePhase(gc);
+                    return StashResult.InProgress;
+                }
+
+                if ((DateTime.Now - _lastActionTime).TotalMilliseconds < ActionCooldownMs)
+                    return StashResult.InProgress;
+
+                var anyItem = stashEl.VisibleStash?.VisibleInventoryItems?.FirstOrDefault(item => item.Entity != null);
+                if (anyItem == null)
+                {
+                    Status = "No items visible in fragment tab";
+                    EnterStorePhase(gc);
+                    return StashResult.InProgress;
+                }
+
+                var rect = anyItem.GetClientRect();
+                var windowRectAny = gc.Window.GetWindowRectangle();
+                BotInput.CtrlClickBatch(new[] { new Vector2(windowRectAny.X + rect.Center.X, windowRectAny.Y + rect.Center.Y) });
+                _anyWithdrawCompleted = true;
+                _lastActionTime = DateTime.Now;
+                Status = "Withdrawing one item from fragment tab";
+                return StashResult.InProgress;
+            }
 
             // Resolve the current target — either WithdrawList[index] (multi-item)
             // or the legacy single-item path. The two are mutually exclusive at Start().
