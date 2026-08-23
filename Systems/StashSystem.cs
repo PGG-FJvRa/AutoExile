@@ -82,6 +82,8 @@ namespace AutoExile.Systems
         private int _withdrawsRemaining;
         private int _withdrawListIndex; // which entry of WithdrawList we're processing
         private bool _anyWithdrawCompleted;
+        private DateTime _withdrawTabOpenedAt = DateTime.MinValue;
+        private const float WithdrawTabLoadWaitSeconds = 3f;
 
         // Incubator state
         private bool _cursorHasIncubator;
@@ -129,6 +131,7 @@ namespace AutoExile.Systems
                         WithdrawList.Add((w.PathSubstring, w.Count));
             _withdrawListIndex = 0;
             _anyWithdrawCompleted = false;
+            _withdrawTabOpenedAt = DateTime.MinValue;
 
             _phase = StashPhase.NavigateToStash;
             _phaseStartTime = DateTime.Now;
@@ -439,6 +442,8 @@ namespace AutoExile.Systems
                 _pendingTabSwitch = null;
                 _phase = _afterTabSwitch;
                 _phaseStartTime = DateTime.Now;
+                if (_phase == StashPhase.WithdrawItems)
+                    _withdrawTabOpenedAt = DateTime.Now;
                 Status = $"On tab '{names[targetIdx]}'";
                 return StashResult.InProgress;
             }
@@ -492,6 +497,16 @@ namespace AutoExile.Systems
 
                 if ((DateTime.Now - _lastActionTime).TotalMilliseconds < ActionCooldownMs)
                     return StashResult.InProgress;
+
+                // The visible inventory list is populated asynchronously after a
+                // tab switch. Avoid treating an empty early read as an empty tab.
+                if (_withdrawTabOpenedAt != DateTime.MinValue &&
+                    (DateTime.Now - _withdrawTabOpenedAt).TotalSeconds < WithdrawTabLoadWaitSeconds)
+                {
+                    var wait = WithdrawTabLoadWaitSeconds - (DateTime.Now - _withdrawTabOpenedAt).TotalSeconds;
+                    Status = $"Waiting for fragment tab items to load ({wait:F1}s)";
+                    return StashResult.InProgress;
+                }
 
                 var anyItems = stashEl.VisibleStash?.VisibleInventoryItems?
                     .Where(item => item.Entity != null)
