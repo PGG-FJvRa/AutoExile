@@ -60,7 +60,8 @@ namespace AutoExile.Systems
         /// <summary>How many fragments to withdraw (ctrl+clicks). Each click withdraws one stack unit.</summary>
         public int WithdrawCount { get; set; }
 
-        /// <summary>Withdraw the first visible item from the configured withdraw tab.</summary>
+        /// <summary>Withdraw visible items from the configured withdraw tab without path filtering.
+        /// <see cref="WithdrawCount"/> controls how many slots to take.</summary>
         public bool WithdrawAnyItem { get; set; }
 
         /// <summary>
@@ -492,20 +493,27 @@ namespace AutoExile.Systems
                 if ((DateTime.Now - _lastActionTime).TotalMilliseconds < ActionCooldownMs)
                     return StashResult.InProgress;
 
-                var anyItem = stashEl.VisibleStash?.VisibleInventoryItems?.FirstOrDefault(item => item.Entity != null);
-                if (anyItem == null)
+                var anyItems = stashEl.VisibleStash?.VisibleInventoryItems?
+                    .Where(item => item.Entity != null)
+                    .Take(Math.Max(1, WithdrawCount))
+                    .ToList();
+                if (anyItems == null || anyItems.Count == 0)
                 {
                     Status = "No items visible in fragment tab";
                     EnterStorePhase(gc);
                     return StashResult.InProgress;
                 }
 
-                var rect = anyItem.GetClientRect();
                 var windowRectAny = gc.Window.GetWindowRectangle();
-                BotInput.CtrlClickBatch(new[] { new Vector2(windowRectAny.X + rect.Center.X, windowRectAny.Y + rect.Center.Y) });
+                var anyPositions = anyItems.Select(item =>
+                {
+                    var rect = item.GetClientRect();
+                    return new Vector2(windowRectAny.X + rect.Center.X, windowRectAny.Y + rect.Center.Y);
+                }).ToList();
+                BotInput.CtrlClickBatch(anyPositions);
                 _anyWithdrawCompleted = true;
                 _lastActionTime = DateTime.Now;
-                Status = "Withdrawing one item from fragment tab";
+                Status = $"Withdrawing {anyPositions.Count} item(s) from fragment tab";
                 return StashResult.InProgress;
             }
 

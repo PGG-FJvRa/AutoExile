@@ -215,14 +215,14 @@ namespace AutoExile.Modes.Shared
                     withdrawTabName:      needWithdraw ? _resourceTabName      : null,
                     // Single-item fields only used when there's no multi-item list.
                     withdrawFragmentPath: needMultiWithdraw ? null : (needSingleWithdraw ? _withdrawFragmentPath : null),
-                    withdrawCount:        needMultiWithdraw ? 0    : withdrawNeeded,
+                    withdrawCount:        needMultiWithdraw ? 0    : (needAnyWithdraw ? _fragmentStock : withdrawNeeded),
                     itemFilter:           needStore ? _stashItemFilter : (_ => false),
                     withdrawList:         activeWithdrawList,
                     withdrawAnyItem:      needAnyWithdraw);
                 var parts = new List<string>();
                 if (needSingleWithdraw) parts.Add($"withdraw {withdrawNeeded} fragments");
                 if (needMultiWithdraw)  parts.Add($"withdraw {totalNeededFromList} items ({activeWithdrawList!.Count} types)");
-                if (needAnyWithdraw)    parts.Add("withdraw one fragment-tab item");
+                if (needAnyWithdraw)    parts.Add($"withdraw {_fragmentStock} fragment-tab items");
                 if (needStore) parts.Add($"stash {lootItems} loot items");
                 Status = string.Join(" & ", parts);
                 return HideoutSignal.InProgress;
