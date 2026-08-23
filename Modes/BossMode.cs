@@ -293,6 +293,7 @@ namespace AutoExile.Modes
                     stashItemThreshold: runSettings.StashItemThreshold.Value,
                     dumpTabName: string.IsNullOrWhiteSpace(stashSettings.DumpTabName.Value) ? null : stashSettings.DumpTabName.Value,
                     resourceTabName: string.IsNullOrWhiteSpace(stashSettings.FragmentTabName.Value) ? null : stashSettings.FragmentTabName.Value,
+                    fragmentStock: bossSettings.FragmentStock.Value,
                     forceCtrlClick: _activeEncounter.UsesAutoMatchCtrlClick,
                     withdrawAnyItem: true,
                     inventoryResourceFilter: item => item.Item?.GetComponent<ExileCore.PoEMemory.Components.Base>()?.Name
