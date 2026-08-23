@@ -317,8 +317,10 @@ namespace AutoExile.Systems
                 return;
             }
 
-            // Single-item path — Boss/Sim fragment withdrawal.
-            if (!string.IsNullOrEmpty(WithdrawTabName) && !string.IsNullOrEmpty(WithdrawFragmentPath) && WithdrawCount > 0)
+            // Single-item path — Boss/Sim fragment withdrawal, or the generic
+            // "first item in fragment tab" path used by preloaded invitations.
+            if (!string.IsNullOrEmpty(WithdrawTabName) &&
+                ((!string.IsNullOrEmpty(WithdrawFragmentPath) && WithdrawCount > 0) || WithdrawAnyItem))
             {
                 _pendingTabSwitch = WithdrawTabName;
                 _afterTabSwitch = StashPhase.WithdrawItems;
@@ -326,7 +328,9 @@ namespace AutoExile.Systems
                 _phase = StashPhase.SwitchToWithdrawTab;
                 _phaseStartTime = DateTime.Now;
                 _withdrawsRemaining = WithdrawCount;
-                Status = $"Switching to {WithdrawTabName} tab for fragments";
+                Status = WithdrawAnyItem
+                    ? $"Switching to {WithdrawTabName} tab for one item"
+                    : $"Switching to {WithdrawTabName} tab for fragments";
                 return;
             }
 
