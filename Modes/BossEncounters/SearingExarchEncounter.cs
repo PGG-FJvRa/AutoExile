@@ -42,14 +42,21 @@ namespace AutoExile.Modes.BossEncounters
         {
             "Forbidden Flame",
             "Crimson Jewel",
+            "Exceptional Eldritch Ember",
         };
 
         // Walk to the arena center/explore while the boss is not yet visible instead
         // of allowing normal combat to idle at the entry portal.
         public bool SuppressCombat => _phase == ExarchPhase.WaitingForBoss;
 
-        // Do not allow combat positioning to pull the character away while loot is dropping.
-        public bool SuppressCombatPositioning => _phase == ExarchPhase.WaitingForLoot;
+        // During Exarch's ball/invulnerability transitions the entity remains present
+        // but is not targetable. Hold position rather than chasing its transition path.
+        // Also do not allow combat positioning to pull the character during loot.
+        public bool SuppressCombatPositioning => _phase == ExarchPhase.WaitingForLoot ||
+            (_phase == ExarchPhase.Fighting && _bossEntity?.IsAlive == true && !_bossEntity.IsTargetable);
+
+        public bool SuppressDodge => _phase == ExarchPhase.Fighting &&
+            _bossEntity?.IsAlive == true && !_bossEntity.IsTargetable;
 
         private ExarchPhase _phase = ExarchPhase.Idle;
         private DateTime _phaseStartTime;
@@ -195,6 +202,14 @@ namespace AutoExile.Modes.BossEncounters
             if (_bossEntity == null)
             {
                 Status = "Searing Exarch transitioning";
+                return BossEncounterResult.InProgress;
+            }
+
+            if (!_bossEntity.IsTargetable)
+            {
+                if (ctx.Navigation.IsNavigating)
+                    ctx.Navigation.Stop(gc);
+                Status = "Searing Exarch ball phase — holding position";
                 return BossEncounterResult.InProgress;
             }
 
