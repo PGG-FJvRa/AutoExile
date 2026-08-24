@@ -85,9 +85,11 @@ namespace AutoExile.Systems
         private int _withdrawsRemaining;
         private int _withdrawListIndex; // which entry of WithdrawList we're processing
         private bool _anyWithdrawCompleted;
+        private DateTime _anyWithdrawCompletedAt = DateTime.MinValue;
         private bool _storedBeforeWithdraw;
         private DateTime _withdrawTabOpenedAt = DateTime.MinValue;
         private const float WithdrawTabLoadWaitSeconds = 3f;
+        private const float WithdrawInventorySettleSeconds = 3f;
 
         // Incubator state
         private bool _cursorHasIncubator;
@@ -137,6 +139,7 @@ namespace AutoExile.Systems
                         WithdrawList.Add((w.PathSubstring, w.Count));
             _withdrawListIndex = 0;
             _anyWithdrawCompleted = false;
+            _anyWithdrawCompletedAt = DateTime.MinValue;
             _storedBeforeWithdraw = false;
             _withdrawTabOpenedAt = DateTime.MinValue;
 
@@ -504,6 +507,12 @@ namespace AutoExile.Systems
             {
                 if (_anyWithdrawCompleted)
                 {
+                    var settleElapsed = (DateTime.Now - _anyWithdrawCompletedAt).TotalSeconds;
+                    if (settleElapsed < WithdrawInventorySettleSeconds)
+                    {
+                        Status = $"Waiting for withdrawn items to settle ({WithdrawInventorySettleSeconds - settleElapsed:F1}s)";
+                        return StashResult.InProgress;
+                    }
                     EnterStorePhase(gc);
                     return StashResult.InProgress;
                 }
@@ -538,7 +547,7 @@ namespace AutoExile.Systems
                     var rect = item.GetClientRect();
                     return new Vector2(windowRectAny.X + rect.Center.X, windowRectAny.Y + rect.Center.Y);
                 }).ToList();
-                BotInput.CtrlClickBatch(anyPositions);
+                BotInput.CtrlClickBatch(anyPositions, _ => _anyWithdrawCompletedAt = DateTime.Now);
                 _anyWithdrawCompleted = true;
                 _lastActionTime = DateTime.Now;
                 Status = $"Withdrawing {anyPositions.Count} item(s) from fragment tab";

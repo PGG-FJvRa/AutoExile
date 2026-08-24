@@ -196,7 +196,6 @@ namespace AutoExile.Modes.Shared
             bool needAnyWithdraw = _withdrawAnyItem && !hasResourceInInventory &&
                 !string.IsNullOrEmpty(_resourceTabName);
             bool needWithdraw = needSingleWithdraw || needMultiWithdraw || needAnyWithdraw;
-
             // Not enough fragments and no way to get more — signal stop (only for modes that use fragments)
             if (usesFragments && fragmentsInInventory < minNeeded && !canWithdraw)
             {
@@ -210,17 +209,24 @@ namespace AutoExile.Modes.Shared
             if (StashSystem.HasStashableItems(ctx.Game, _stashItemFilter))
                 needStore = _stashItemThreshold <= 0 || lootItems >= _stashItemThreshold;
 
-            if (needWithdraw || needStore)
+            // A replenish cycle must dump existing loot before it takes fresh
+            // resources. This deliberately bypasses the normal stash threshold;
+            // otherwise StoreBeforeWithdraw receives an always-false item filter
+            // and appears to run while storing nothing.
+            bool forceStoreBeforeWithdraw = _storeBeforeWithdraw && needWithdraw;
+            bool shouldStore = needStore || forceStoreBeforeWithdraw;
+
+            if (needWithdraw || shouldStore)
             {
                 _phase = HideoutPhase.Stash;
                 _phaseStartTime = DateTime.Now;
                 ctx.Stash.Start(
-                    storeTabName:         needStore    ? _dumpTabName          : null,
+                    storeTabName:         shouldStore  ? _dumpTabName          : null,
                     withdrawTabName:      needWithdraw ? _resourceTabName      : null,
                     // Single-item fields only used when there's no multi-item list.
                     withdrawFragmentPath: needMultiWithdraw ? null : (needSingleWithdraw ? _withdrawFragmentPath : null),
                     withdrawCount:        needMultiWithdraw ? 0    : (needAnyWithdraw ? _fragmentStock : withdrawNeeded),
-                    itemFilter:           needStore ? _stashItemFilter : (_ => false),
+                    itemFilter:           shouldStore ? _stashItemFilter : (_ => false),
                     withdrawList:         activeWithdrawList,
                     withdrawAnyItem:      needAnyWithdraw,
                     storeBeforeWithdraw:  _storeBeforeWithdraw && needWithdraw);
@@ -228,7 +234,7 @@ namespace AutoExile.Modes.Shared
                 if (needSingleWithdraw) parts.Add($"withdraw {withdrawNeeded} fragments");
                 if (needMultiWithdraw)  parts.Add($"withdraw {totalNeededFromList} items ({activeWithdrawList!.Count} types)");
                 if (needAnyWithdraw)    parts.Add($"withdraw {_fragmentStock} fragment-tab items");
-                if (needStore) parts.Add($"stash {lootItems} loot items");
+                if (shouldStore) parts.Add($"stash {lootItems} loot items");
                 Status = string.Join(" & ", parts);
                 return HideoutSignal.InProgress;
             }
