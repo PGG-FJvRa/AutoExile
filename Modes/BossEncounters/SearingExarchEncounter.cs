@@ -215,6 +215,18 @@ namespace AutoExile.Modes.BossEncounters
             // first and then allow normal combat positioning to take over.
             var bossGrid = _bossEntity.GridPosNum;
             var distance = Vector2.Distance(playerGrid, bossGrid);
+
+            // The boss is intentionally invulnerable immediately after entry. Do
+            // not lock at that point — keep following the real boss position until
+            // the entry animation completes and he becomes vulnerable.
+            if (!_combatPositionLocked && _isInvulnerablePhase)
+            {
+                if (distance > 5 && !ctx.Navigation.IsNavigating)
+                    ctx.Navigation.NavigateTo(gc, bossGrid);
+                Status = $"Searing Exarch emerging — moving to boss ({distance:F0}g)";
+                return BossEncounterResult.InProgress;
+            }
+
             if (!_combatPositionLocked && distance > PositionLockDistance && !ctx.Navigation.IsNavigating)
             {
                 ctx.Navigation.NavigateTo(gc, bossGrid);
