@@ -513,6 +513,14 @@ namespace AutoExile.Systems
                         Status = $"Waiting for withdrawn items to settle ({WithdrawInventorySettleSeconds - settleElapsed:F1}s)";
                         return StashResult.InProgress;
                     }
+                    // StoreBeforeWithdraw has already completed the dump pass.
+                    // Closing directly prevents newly withdrawn invitations from
+                    // being transferred into the Dump Tab before map activation.
+                    if (StoreBeforeWithdraw)
+                    {
+                        Status = "Fragment withdrawal settled — closing stash for map device";
+                        return EnterCloseStash();
+                    }
                     EnterStorePhase(gc);
                     return StashResult.InProgress;
                 }
