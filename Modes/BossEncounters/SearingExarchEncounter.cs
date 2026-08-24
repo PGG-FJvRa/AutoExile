@@ -26,6 +26,7 @@ namespace AutoExile.Modes.BossEncounters
         private const string BossPath = "CleansingFireBoss";
         private const string DescensionAltarPath = "CleansingFireDescensionObject";
         private const float LootScanIntervalMs = 500f;
+        private const float PositionLockDistance = 12f;
 
         // The active load flow prefers the player inventory by base name; retain a
         // permissive stash filter only as a compatibility fallback.
@@ -214,7 +215,7 @@ namespace AutoExile.Modes.BossEncounters
             // first and then allow normal combat positioning to take over.
             var bossGrid = _bossEntity.GridPosNum;
             var distance = Vector2.Distance(playerGrid, bossGrid);
-            if (!_combatPositionLocked && distance > 45 && !ctx.Navigation.IsNavigating)
+            if (!_combatPositionLocked && distance > PositionLockDistance && !ctx.Navigation.IsNavigating)
             {
                 ctx.Navigation.NavigateTo(gc, bossGrid);
                 Status = $"Approaching Searing Exarch ({distance:F0}g)";
@@ -222,14 +223,14 @@ namespace AutoExile.Modes.BossEncounters
             }
 
             // The entrance has the boss present but initially invulnerable. Reach
-            // combat range first; only then do later invulnerability signals mean
+            // directly on the boss first; only then do later invulnerability signals mean
             // the ball phase and require us to hold position.
             if (!_combatPositionLocked)
             {
                 _combatPositionLocked = true;
                 if (ctx.Navigation.IsNavigating)
                     ctx.Navigation.Stop(gc);
-                ctx.Log($"[Exarch] In combat range ({distance:F0}g) — holding position until kill");
+                ctx.Log($"[Exarch] At boss ({distance:F0}g) — holding position until kill");
             }
 
             if (_isInvulnerablePhase)
