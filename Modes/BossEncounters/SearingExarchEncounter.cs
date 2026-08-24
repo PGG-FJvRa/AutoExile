@@ -54,9 +54,9 @@ namespace AutoExile.Modes.BossEncounters
         // but is not targetable. Hold position rather than chasing its transition path.
         // Also do not allow combat positioning to pull the character during loot.
         public bool SuppressCombatPositioning => _phase == ExarchPhase.WaitingForLoot ||
-            _isInvulnerablePhase || _combatPositionLocked;
+            _phase == ExarchPhase.Fighting;
 
-        public bool SuppressDodge => _isInvulnerablePhase || _combatPositionLocked;
+        public bool SuppressDodge => _phase == ExarchPhase.Fighting;
 
         private ExarchPhase _phase = ExarchPhase.Idle;
         private DateTime _phaseStartTime;
@@ -209,14 +209,6 @@ namespace AutoExile.Modes.BossEncounters
                 return BossEncounterResult.InProgress;
             }
 
-            if (_isInvulnerablePhase)
-            {
-                if (ctx.Navigation.IsNavigating)
-                    ctx.Navigation.Stop(gc);
-                Status = "Searing Exarch ball/invulnerability phase — holding position";
-                return BossEncounterResult.InProgress;
-            }
-
             // The combat system only repositions after it has an in-range target.
             // Exarch can stream in outside that range, so explicitly close the gap
             // first and then allow normal combat positioning to take over.
@@ -229,15 +221,21 @@ namespace AutoExile.Modes.BossEncounters
                 return BossEncounterResult.InProgress;
             }
 
-            // Once in range, lock the current position for the rest of the fight.
-            // This prevents combat repositioning, chase navigation, and dodge blinks
-            // from pulling the character away after damage has started.
+            // The entrance has the boss present but initially invulnerable. Reach
+            // combat range first; only then do later invulnerability signals mean
+            // the ball phase and require us to hold position.
             if (!_combatPositionLocked)
             {
                 _combatPositionLocked = true;
                 if (ctx.Navigation.IsNavigating)
                     ctx.Navigation.Stop(gc);
                 ctx.Log($"[Exarch] In combat range ({distance:F0}g) — holding position until kill");
+            }
+
+            if (_isInvulnerablePhase)
+            {
+                Status = "Searing Exarch ball/invulnerability phase — holding position";
+                return BossEncounterResult.InProgress;
             }
 
             var life = _bossEntity.GetComponent<ExileCore.PoEMemory.Components.Life>();
