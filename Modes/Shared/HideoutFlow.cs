@@ -30,6 +30,7 @@ namespace AutoExile.Modes.Shared
         private int _minFragments; // minimum fragments needed to open (0 = any amount works)
         private bool _withdrawAnyItem;
         private Func<ServerInventory.InventSlotItem, bool>? _inventoryResourceFilter;
+        private bool _storeBeforeWithdraw;
 
         // Multi-item withdrawal (Wave Farming uses this for scarabs + portal scrolls
         // + maps in one stash trip). Mutually exclusive with the single _withdrawFragmentPath
@@ -65,7 +66,8 @@ namespace AutoExile.Modes.Shared
             IReadOnlyList<string>? scarabPaths = null,
             bool forceCtrlClick = false,
             bool withdrawAnyItem = false,
-            Func<ServerInventory.InventSlotItem, bool>? inventoryResourceFilter = null)
+            Func<ServerInventory.InventSlotItem, bool>? inventoryResourceFilter = null,
+            bool storeBeforeWithdraw = false)
         {
             _mapFilter = mapFilter;
             _stashItemFilter = stashItemFilter;
@@ -80,6 +82,7 @@ namespace AutoExile.Modes.Shared
             _minFragments = minFragments;
             _withdrawAnyItem = withdrawAnyItem;
             _inventoryResourceFilter = inventoryResourceFilter;
+            _storeBeforeWithdraw = storeBeforeWithdraw;
             _withdrawList = withdrawList != null && withdrawList.Count > 0 ? withdrawList : null;
             _scarabPaths = scarabPaths != null && scarabPaths.Count > 0 ? scarabPaths : null;
             _forceCtrlClick = forceCtrlClick;
@@ -135,6 +138,7 @@ namespace AutoExile.Modes.Shared
             _minFragments = 1;
             _withdrawAnyItem = false;
             _inventoryResourceFilter = null;
+            _storeBeforeWithdraw = false;
             _withdrawList = null;
             _scarabPaths = null;
             _forceCtrlClick = false;
@@ -218,7 +222,8 @@ namespace AutoExile.Modes.Shared
                     withdrawCount:        needMultiWithdraw ? 0    : (needAnyWithdraw ? _fragmentStock : withdrawNeeded),
                     itemFilter:           needStore ? _stashItemFilter : (_ => false),
                     withdrawList:         activeWithdrawList,
-                    withdrawAnyItem:      needAnyWithdraw);
+                    withdrawAnyItem:      needAnyWithdraw,
+                    storeBeforeWithdraw:  _storeBeforeWithdraw && needWithdraw);
                 var parts = new List<string>();
                 if (needSingleWithdraw) parts.Add($"withdraw {withdrawNeeded} fragments");
                 if (needMultiWithdraw)  parts.Add($"withdraw {totalNeededFromList} items ({activeWithdrawList!.Count} types)");

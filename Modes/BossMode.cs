@@ -297,7 +297,8 @@ namespace AutoExile.Modes
                     forceCtrlClick: _activeEncounter.UsesAutoMatchCtrlClick,
                     withdrawAnyItem: true,
                     inventoryResourceFilter: item => item.Item?.GetComponent<ExileCore.PoEMemory.Components.Base>()?.Name
-                        .Equals("Incandescent Invitation", StringComparison.OrdinalIgnoreCase) == true);
+                        .Equals("Incandescent Invitation", StringComparison.OrdinalIgnoreCase) == true,
+                    storeBeforeWithdraw: true);
                 Status = $"Hideout — activate preloaded {_activeEncounter.Name}";
                 return;
             }

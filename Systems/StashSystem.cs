@@ -64,6 +64,9 @@ namespace AutoExile.Systems
         /// <see cref="WithdrawCount"/> controls how many slots to take.</summary>
         public bool WithdrawAnyItem { get; set; }
 
+        /// <summary>When true, run the store pass before switching to the withdraw tab.</summary>
+        public bool StoreBeforeWithdraw { get; set; }
+
         /// <summary>
         /// Multi-item withdrawal queue. Processed sequentially within the same stash
         /// session: switch to <see cref="WithdrawTabName"/> once, then for each entry
@@ -82,6 +85,7 @@ namespace AutoExile.Systems
         private int _withdrawsRemaining;
         private int _withdrawListIndex; // which entry of WithdrawList we're processing
         private bool _anyWithdrawCompleted;
+        private bool _storedBeforeWithdraw;
         private DateTime _withdrawTabOpenedAt = DateTime.MinValue;
         private const float WithdrawTabLoadWaitSeconds = 3f;
 
@@ -108,7 +112,8 @@ namespace AutoExile.Systems
             int withdrawCount = 0,
             Func<ServerInventory.InventSlotItem, bool>? itemFilter = null,
             IReadOnlyList<(string PathSubstring, int Count)>? withdrawList = null,
-            bool withdrawAnyItem = false)
+            bool withdrawAnyItem = false,
+            bool storeBeforeWithdraw = false)
         {
             if (_phase != StashPhase.Idle)
                 return false;
@@ -119,6 +124,7 @@ namespace AutoExile.Systems
             WithdrawFragmentPath = withdrawFragmentPath;
             WithdrawCount        = withdrawCount;
             WithdrawAnyItem      = withdrawAnyItem;
+            StoreBeforeWithdraw  = storeBeforeWithdraw;
             ItemFilter           = itemFilter;
 
             // Multi-item path: if a list is supplied, that wins over the single-item
@@ -131,6 +137,7 @@ namespace AutoExile.Systems
                         WithdrawList.Add((w.PathSubstring, w.Count));
             _withdrawListIndex = 0;
             _anyWithdrawCompleted = false;
+            _storedBeforeWithdraw = false;
             _withdrawTabOpenedAt = DateTime.MinValue;
 
             _phase = StashPhase.NavigateToStash;
@@ -307,6 +314,12 @@ namespace AutoExile.Systems
         /// <summary>Decide what to do first once stash is open.</summary>
         private void EnterFirstStashPhase(GameController gc)
         {
+            if (StoreBeforeWithdraw && !_storedBeforeWithdraw)
+            {
+                EnterStorePhase(gc);
+                return;
+            }
+
             // Multi-item path takes precedence — wave farming withdraws scarabs +
             // portal scrolls + maybe maps in one stash trip.
             if (!string.IsNullOrEmpty(WithdrawTabName) && WithdrawList.Count > 0)
@@ -653,6 +666,12 @@ namespace AutoExile.Systems
             // If we already ran a batch, we're done — close stash
             if (_itemsStored > 0)
             {
+                if (StoreBeforeWithdraw && !_storedBeforeWithdraw)
+                {
+                    _storedBeforeWithdraw = true;
+                    EnterFirstStashPhase(gc);
+                    return StashResult.InProgress;
+                }
                 Status = $"Done — stored {_itemsStored} items — closing stash";
                 return EnterCloseStash();
             }
@@ -661,6 +680,12 @@ namespace AutoExile.Systems
             var slotItems = GetInventorySlotItems(gc);
             if (slotItems == null || slotItems.Count == 0)
             {
+                if (StoreBeforeWithdraw && !_storedBeforeWithdraw)
+                {
+                    _storedBeforeWithdraw = true;
+                    EnterFirstStashPhase(gc);
+                    return StashResult.InProgress;
+                }
                 Status = $"Done — nothing to store — closing stash";
                 return EnterCloseStash();
             }
@@ -679,6 +704,12 @@ namespace AutoExile.Systems
 
             if (positions.Count == 0)
             {
+                if (StoreBeforeWithdraw && !_storedBeforeWithdraw)
+                {
+                    _storedBeforeWithdraw = true;
+                    EnterFirstStashPhase(gc);
+                    return StashResult.InProgress;
+                }
                 Status = $"Done — stored {_itemsStored} items (kept {slotItems.Count} filtered) — closing stash";
                 return EnterCloseStash();
             }
