@@ -53,9 +53,10 @@ namespace AutoExile.Modes.BossEncounters
         // During Exarch's ball/invulnerability transitions the entity remains present
         // but is not targetable. Hold position rather than chasing its transition path.
         // Also do not allow combat positioning to pull the character during loot.
-        public bool SuppressCombatPositioning => _phase == ExarchPhase.WaitingForLoot || _isInvulnerablePhase;
+        public bool SuppressCombatPositioning => _phase == ExarchPhase.WaitingForLoot ||
+            _isInvulnerablePhase || _combatPositionLocked;
 
-        public bool SuppressDodge => _isInvulnerablePhase;
+        public bool SuppressDodge => _isInvulnerablePhase || _combatPositionLocked;
 
         private ExarchPhase _phase = ExarchPhase.Idle;
         private DateTime _phaseStartTime;
@@ -65,6 +66,7 @@ namespace AutoExile.Modes.BossEncounters
         private DateTime _bossLastSeenAt;
         private DateTime _lastLootScan;
         private bool _isInvulnerablePhase;
+        private bool _combatPositionLocked;
 
         private enum ExarchPhase
         {
@@ -93,6 +95,7 @@ namespace AutoExile.Modes.BossEncounters
             _bossLastSeenAt = DateTime.MinValue;
             _lastLootScan = DateTime.MinValue;
             _isInvulnerablePhase = false;
+            _combatPositionLocked = false;
             Status = "Entered arena — waiting for Searing Exarch";
             ctx.Log("[Exarch] Zone entered");
         }
@@ -219,11 +222,22 @@ namespace AutoExile.Modes.BossEncounters
             // first and then allow normal combat positioning to take over.
             var bossGrid = _bossEntity.GridPosNum;
             var distance = Vector2.Distance(playerGrid, bossGrid);
-            if (distance > 45 && !ctx.Navigation.IsNavigating)
+            if (!_combatPositionLocked && distance > 45 && !ctx.Navigation.IsNavigating)
             {
                 ctx.Navigation.NavigateTo(gc, bossGrid);
                 Status = $"Approaching Searing Exarch ({distance:F0}g)";
                 return BossEncounterResult.InProgress;
+            }
+
+            // Once in range, lock the current position for the rest of the fight.
+            // This prevents combat repositioning, chase navigation, and dodge blinks
+            // from pulling the character away after damage has started.
+            if (!_combatPositionLocked)
+            {
+                _combatPositionLocked = true;
+                if (ctx.Navigation.IsNavigating)
+                    ctx.Navigation.Stop(gc);
+                ctx.Log($"[Exarch] In combat range ({distance:F0}g) — holding position until kill");
             }
 
             var life = _bossEntity.GetComponent<ExileCore.PoEMemory.Components.Life>();
@@ -372,6 +386,7 @@ namespace AutoExile.Modes.BossEncounters
             _bossLastSeenAt = DateTime.MinValue;
             _lastLootScan = DateTime.MinValue;
             _isInvulnerablePhase = false;
+            _combatPositionLocked = false;
             Status = "";
         }
     }
