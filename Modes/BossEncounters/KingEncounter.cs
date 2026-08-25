@@ -74,8 +74,9 @@ namespace AutoExile.Modes.BossEncounters
         private Vector2? _bossDeathPos;
         private DateTime _lastLootScan;
         private int _lootScanAttempts;
-        // Loot is scanned every 500ms; 24 checks gives drops roughly 12 seconds to appear.
-        private const int MaxLootScanAttempts = 24;
+        // Loot is scanned every 500ms; 20 checks gives drops 10 seconds to appear.
+        // A strict loot filter may legitimately show no labels, so do not wait longer.
+        private const int MaxLootScanAttempts = 20;
         private bool _mazeVisited;
         private bool _bossWasAlive;
         private int _exploreFails;
