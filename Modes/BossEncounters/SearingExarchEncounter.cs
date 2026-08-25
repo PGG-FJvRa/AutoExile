@@ -47,6 +47,14 @@ namespace AutoExile.Modes.BossEncounters
             "Exceptional Eldritch Ember",
         };
 
+        // Forbidden Flame is unidentified on the ground, where it appears as its
+        // Crimson Jewel base. Embers are looted but are not Flame-drop statistics.
+        public IReadOnlyList<string> TrackedLootItems { get; } = new[]
+        {
+            "Forbidden Flame",
+            "Crimson Jewel",
+        };
+
         // Walk to the arena center/explore while the boss is not yet visible instead
         // of allowing normal combat to idle at the entry portal.
         public bool SuppressCombat => _phase == ExarchPhase.WaitingForBoss;

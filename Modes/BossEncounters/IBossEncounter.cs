@@ -46,6 +46,10 @@ namespace AutoExile.Modes.BossEncounters
         /// Substring match, case-insensitive. Empty = no overrides.</summary>
         IReadOnlyList<string> MustLootItems => Array.Empty<string>();
 
+        /// <summary>Subset of <see cref="MustLootItems"/> counted as boss key drops after
+        /// a pickup succeeds. By default, all encounter must-loot items are counted.</summary>
+        IReadOnlyList<string> TrackedLootItems => MustLootItems;
+
         /// <summary>Called when player enters the boss zone (area change, not hideout/town).</summary>
         void OnEnterZone(BotContext ctx);
 

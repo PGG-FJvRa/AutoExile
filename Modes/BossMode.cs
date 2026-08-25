@@ -32,6 +32,7 @@ namespace AutoExile.Modes
         // ── Hideout flow ──
         private readonly HideoutFlow _hideoutFlow = new();
         private readonly LootPickupTracker _lootTracker = new();
+        private bool _trackLootPickups;
 
         // ── Run state ──
         private bool _mapCompleted;
@@ -40,6 +41,9 @@ namespace AutoExile.Modes
         private int _deathCount;
         private int _runsCompleted;
         private int _targetItemsLooted;
+        private int _exceptionalEldritchEmbersLooted;
+        private int _paidBossRuns;
+        private bool _currentRunCostApplied;
         private DateTime _sessionStartTime;
         private DateTime _runStartTime;
         private double _totalRunTimeMs;   // cumulative run time across completed runs
@@ -62,12 +66,18 @@ namespace AutoExile.Modes
         public int RunsCompleted => _runsCompleted;
         public int Deaths => _deathCount;
         public int TargetItemsLooted => _targetItemsLooted;
+        public int ExceptionalEldritchEmbersLooted => _exceptionalEldritchEmbersLooted;
+        public int PaidBossRuns => _paidBossRuns;
         public double AvgRunTimeSeconds => _runsCompleted > 0 ? (_totalRunTimeMs / _runsCompleted) / 1000.0 : 0;
         public double RunsPerDrop => _targetItemsLooted > 0 ? (double)_runsCompleted / _targetItemsLooted : 0;
         public double SessionSeconds => (DateTime.Now - _sessionStartTime).TotalSeconds;
         public DateTime RunStartTime => _runStartTime;
-        public double ChaosPerHour(int keyDropValue) =>
-            SessionSeconds > 60 ? _targetItemsLooted * keyDropValue / (SessionSeconds / 3600.0) : 0;
+        public double GrossEarningsChaos(int forbiddenFlameValue, int emberValue) =>
+            _targetItemsLooted * forbiddenFlameValue + _exceptionalEldritchEmbersLooted * emberValue;
+        public double NetEarningsChaos(int forbiddenFlameValue, int emberValue, int runCost) =>
+            GrossEarningsChaos(forbiddenFlameValue, emberValue) - _paidBossRuns * runCost;
+        public double ChaosPerHour(int forbiddenFlameValue, int emberValue, int runCost) =>
+            SessionSeconds > 60 ? NetEarningsChaos(forbiddenFlameValue, emberValue, runCost) / (SessionSeconds / 3600.0) : 0;
 
         public enum BossPhase
         {
@@ -85,6 +95,16 @@ namespace AutoExile.Modes
         public void Register(IBossEncounter encounter)
         {
             _encounters[encounter.Name] = encounter;
+        }
+
+        private void TrackLootPickup(LootCandidate candidate)
+        {
+            if (!_trackLootPickups || _lootTracker.HasPending ||
+                _activeEncounter?.MustLootItems is not { Count: > 0 } mustLoot ||
+                !mustLoot.Any(item => candidate.ItemName.Contains(item, StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            _lootTracker.SetPending(candidate.Entity.Id, candidate.ItemName, candidate.ChaosValue);
         }
 
         /// <summary>Called by BotCore when player dies.</summary>
@@ -114,9 +134,14 @@ namespace AutoExile.Modes
             _deathCount = 0;
             _runsCompleted = 0;
             _targetItemsLooted = 0;
+            _exceptionalEldritchEmbersLooted = 0;
+            _paidBossRuns = 0;
+            _currentRunCostApplied = false;
             _totalRunTimeMs = 0;
             _mapCompleted = false;
             _portalKeyPressed = false;
+            _trackLootPickups = true;
+            ctx.Loot.OnPickupInitiated = TrackLootPickup;
             _sessionStartTime = DateTime.Now;
             _runStartTime = DateTime.Now;
 
@@ -137,6 +162,7 @@ namespace AutoExile.Modes
 
         public void OnExit()
         {
+            _trackLootPickups = false;
             _phase = BossPhase.Idle;
             _activeEncounter?.Reset();
             _hideoutFlow.Cancel();
@@ -217,9 +243,14 @@ namespace AutoExile.Modes
             if (hadPendingLoot && interactionResult == InteractionResult.Succeeded)
             {
                 // Check if this was a target item
-                if (_activeEncounter?.MustLootItems is { Count: > 0 } mustLoot &&
+                if (pendingLootName.Contains("Exceptional Eldritch Ember", StringComparison.OrdinalIgnoreCase))
+                {
+                    _exceptionalEldritchEmbersLooted++;
+                    ctx.Log($"[Boss] Exceptional Eldritch Ember looted: {pendingLootName} (total: {_exceptionalEldritchEmbersLooted})");
+                }
+                else if (_activeEncounter?.TrackedLootItems is { Count: > 0 } trackedLoot &&
                     !string.IsNullOrEmpty(pendingLootName) &&
-                    mustLoot.Any(m => pendingLootName.Contains(m, StringComparison.OrdinalIgnoreCase)))
+                    trackedLoot.Any(m => pendingLootName.Contains(m, StringComparison.OrdinalIgnoreCase)))
                 {
                     _targetItemsLooted++;
                     ctx.Log($"[Boss] Target item looted: {pendingLootName} (total: {_targetItemsLooted})");
@@ -275,6 +306,7 @@ namespace AutoExile.Modes
             if (resetRun)
             {
                 _deathCount = 0;
+                _currentRunCostApplied = false;
                 _activeEncounter?.Reset();
             }
             ctx.Loot.MustLootItems.Clear();
@@ -427,7 +459,6 @@ namespace AutoExile.Modes
                 var (_, candidate) = ctx.Loot.PickupNext(ctx.Interaction, ctx.Navigation);
                 if (candidate != null && ctx.Interaction.IsBusy)
                 {
-                    _lootTracker.SetPending(candidate.Entity.Id, candidate.ItemName, candidate.ChaosValue);
                     Status = $"Looting: {candidate.ItemName} {countdown}";
                     return;
                 }
@@ -715,6 +746,11 @@ namespace AutoExile.Modes
                 }
 
                 _activeEncounter?.OnEnterZone(ctx);
+                if (!_currentRunCostApplied)
+                {
+                    _paidBossRuns++;
+                    _currentRunCostApplied = true;
+                }
                 _phase = BossPhase.InBossZone;
                 _phaseStartTime = DateTime.Now;
                 _portalKeyPressed = false;

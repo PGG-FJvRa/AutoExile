@@ -61,6 +61,12 @@ namespace AutoExile.Systems
         /// </summary>
         public Action<string, string, double>? OnItemSkipped { get; set; }
 
+        /// <summary>
+        /// Fired after a ground-item pickup interaction has been started. Consumers must
+        /// wait for the InteractionSystem result before recording the item as collected.
+        /// </summary>
+        public Action<LootCandidate>? OnPickupInitiated { get; set; }
+
         // ── Label toggle unstick ──
         public bool LabelToggleUnstick { get; set; } = true;
         public float LabelToggleCooldownSeconds { get; set; } = 5f;
@@ -368,6 +374,7 @@ namespace AutoExile.Systems
 
             interaction.PickupGroundItem(best.Entity, nav,
                 requireProximity: !withinRadius);
+            OnPickupInitiated?.Invoke(best);
 
             return (withinRadius, best);
         }

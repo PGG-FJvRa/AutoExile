@@ -1190,9 +1190,17 @@ namespace AutoExile
                     BossRuns = _bossMode?.RunsCompleted ?? 0,
                     BossDeaths = _bossMode?.Deaths ?? 0,
                     BossDrops = _bossMode?.TargetItemsLooted ?? 0,
+                    BossEmbers = _bossMode?.ExceptionalEldritchEmbersLooted ?? 0,
+                    BossEarnings = Sanitize((float)(_bossMode?.NetEarningsChaos(
+                        Settings.Boss.ForbiddenFlameChaosValue.Value,
+                        Settings.Boss.ExceptionalEldritchEmberChaosValue.Value,
+                        Settings.Boss.BossRunCostChaosValue.Value) ?? 0)),
                     BossAvgRunTime = Sanitize((float)(_bossMode?.AvgRunTimeSeconds ?? 0)),
                     BossRunsPerDrop = Sanitize((float)(_bossMode?.RunsPerDrop ?? 0)),
-                    BossChaosPerHour = Sanitize((float)(_bossMode?.ChaosPerHour(Settings.Boss.KeyDropChaosValue.Value) ?? 0)),
+                    BossChaosPerHour = Sanitize((float)(_bossMode?.ChaosPerHour(
+                        Settings.Boss.ForbiddenFlameChaosValue.Value,
+                        Settings.Boss.ExceptionalEldritchEmberChaosValue.Value,
+                        Settings.Boss.BossRunCostChaosValue.Value) ?? 0)),
                     BossRunTime = _bossMode != null && _mode == _bossMode
                         && _bossMode.Phase >= BossMode.BossPhase.InBossZone && _bossMode.Phase <= BossMode.BossPhase.ExitMap
                         ? (DateTime.Now - _bossMode.RunStartTime).ToString(@"m\:ss") : "",

@@ -502,8 +502,14 @@ namespace AutoExile
             [Menu("Fragment Stock", "Keep this many fragments in inventory. Withdraws from resource tab to maintain stock.")]
             public RangeNode<int> FragmentStock { get; set; } = new RangeNode<int>(20, 1, 60);
 
-            [Menu("Key Drop Value (chaos)", "Assumed chaos value per key drop for profit tracking. Set to the average unidentified value of the target item.")]
-            public RangeNode<int> KeyDropChaosValue { get; set; } = new RangeNode<int>(15, 0, 500);
+            [Menu("Forbidden Flame Value (chaos)", "Sale value used for earnings calculations. Update this when the market changes.")]
+            public RangeNode<int> ForbiddenFlameChaosValue { get; set; } = new RangeNode<int>(2200, 0, 10000);
+
+            [Menu("Exceptional Eldritch Ember Value (chaos)", "Sale value used for earnings calculations. Update this when the market changes.")]
+            public RangeNode<int> ExceptionalEldritchEmberChaosValue { get; set; } = new RangeNode<int>(100, 0, 2000);
+
+            [Menu("Boss Run Cost (chaos)", "Invitation and consumable cost deducted from earnings for every entered boss arena.")]
+            public RangeNode<int> BossRunCostChaosValue { get; set; } = new RangeNode<int>(165, 0, 2000);
 
             [Menu("Fear DPS Position", "Grid position to stand at during Incarnation of Fear pre-lay phase. Format: X,Y. Use 'Set Current Pos' button to capture. Empty = default (206,320).")]
             public TextNode FearDpsPosition { get; set; } = new TextNode();

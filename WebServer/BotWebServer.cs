@@ -1127,6 +1127,8 @@ namespace AutoExile.WebServer
         public int BossRuns { get; init; }
         public int BossDeaths { get; init; }
         public int BossDrops { get; init; }
+        public int BossEmbers { get; init; }
+        public float BossEarnings { get; init; }
         public float BossAvgRunTime { get; init; }
         public float BossRunsPerDrop { get; init; }
         public float BossChaosPerHour { get; init; }
