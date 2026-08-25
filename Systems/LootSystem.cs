@@ -457,10 +457,10 @@ namespace AutoExile.Systems
                 if (entity.DistancePlayer > 30) continue; // within loot range
                 if (_failedEntities.ContainsKey(entity.Id)) continue;
                 nearbyItems++;
-                if (nearbyItems >= 2) break; // enough to justify a toggle
+                if (nearbyItems >= 1) break; // a single valuable boss drop can be hidden
             }
 
-            return nearbyItems >= 2;
+            return nearbyItems >= 1;
         }
 
         /// <summary>
@@ -507,6 +507,7 @@ namespace AutoExile.Systems
                 }
                 TogglePhase = LabelTogglePhase.Idle;
                 ToggleStatus = "";
+                _scanCache.Clear(); // re-evaluate labels after recovery
                 return false;
             }
 
@@ -567,6 +568,8 @@ namespace AutoExile.Systems
 
                     TogglePhase = LabelTogglePhase.Idle;
                     ToggleStatus = "";
+                    _scanCache.Clear(); // labels may have been re-laid out
+                    _scanCache.Clear(); // labels may have been re-laid out
                     return false;
                 }
             }
