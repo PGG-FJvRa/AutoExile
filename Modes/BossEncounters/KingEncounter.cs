@@ -73,6 +73,9 @@ namespace AutoExile.Modes.BossEncounters
         private Entity? _bossEntity;
         private Vector2? _bossDeathPos;
         private DateTime _lastLootScan;
+        private int _lootScanAttempts;
+        // Loot is scanned every 500ms; 24 checks gives drops roughly 12 seconds to appear.
+        private const int MaxLootScanAttempts = 24;
         private bool _mazeVisited;
         private bool _bossWasAlive;
         private int _exploreFails;
@@ -100,6 +103,7 @@ namespace AutoExile.Modes.BossEncounters
             _mazeVisited = false;
             _bossWasAlive = false;
             _exploreFails = 0;
+            _lootScanAttempts = 0;
             _lastPlayerGrid = new Vector2(gc.Player.GridPosNum.X, gc.Player.GridPosNum.Y);
             Status = "Entered arena — walking to center";
             ctx.Log($"[King] Zone entered at ({_lastPlayerGrid.X:F0}, {_lastPlayerGrid.Y:F0})");
@@ -159,6 +163,7 @@ namespace AutoExile.Modes.BossEncounters
                 {
                     _phase = KingPhase.WaitingForLoot;
                     _phaseStartTime = DateTime.Now;
+                    _lootScanAttempts = 0;
                     Status = "Altar appeared — waiting for loot drops";
                     ctx.Log("[King] Descension Altar visible, boss confirmed dead");
                     return BossEncounterResult.InProgress;
@@ -340,6 +345,13 @@ namespace AutoExile.Modes.BossEncounters
             {
                 ctx.Loot.Scan(gc);
                 _lastLootScan = DateTime.Now;
+                _lootScanAttempts++;
+                if (_lootScanAttempts >= MaxLootScanAttempts)
+                {
+                    Status = $"Loot check limit reached ({MaxLootScanAttempts})";
+                    ctx.Log($"[King] Loot check limit reached ({MaxLootScanAttempts}) — signaling Complete");
+                    return BossEncounterResult.Complete;
+                }
             }
 
             if (ctx.Interaction.IsBusy)
@@ -369,7 +381,7 @@ namespace AutoExile.Modes.BossEncounters
                 return BossEncounterResult.InProgress;
             }
 
-            Status = $"Waiting for loot {countdown}";
+            Status = $"Waiting for loot ({_lootScanAttempts}/{MaxLootScanAttempts} checks) {countdown}";
             return BossEncounterResult.InProgress;
         }
 
