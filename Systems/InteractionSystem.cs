@@ -282,17 +282,13 @@ namespace AutoExile.Systems
                     return InteractionResult.Succeeded;
                 }
 
-                // Entity still exists but label not visible — transient flicker.
-                // If we haven't clicked yet, wait for label to reappear.
-                // If we already clicked, count as success (click likely worked, label removed).
-                if (_clickAttempts > 0)
-                {
-                    Status = "Item label gone after click — assumed collected";
-                    _currentTarget = null;
-                    return InteractionResult.Succeeded;
-                }
-
-                Status = "Label not visible — waiting";
+                // Entity still exists but its label is not visible — this is label
+                // flicker, not proof of collection. In particular, a click can make
+                // an overlapped label disappear without looting it. Do not report a
+                // successful pickup until the ground entity itself is gone.
+                Status = _clickAttempts > 0
+                    ? "Label hidden after click — verifying item remains"
+                    : "Label not visible — waiting";
                 return InteractionResult.InProgress;
             }
 
