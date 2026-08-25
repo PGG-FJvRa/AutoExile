@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.WebSockets;
+using System.Diagnostics;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
@@ -95,6 +96,9 @@ namespace AutoExile.WebServer
             {
                 try
                 {
+                    if (_networkAccess)
+                        EnsureNetworkUrlReservation(port);
+
                     _cts = new CancellationTokenSource();
                     _listener = new HttpListener();
 
@@ -172,6 +176,64 @@ namespace AutoExile.WebServer
 
             LastError = $"All ports failed ({string.Join(", ", portsToTry)})";
             _log($"Web server: {LastError}. Check if another process uses these ports.");
+        }
+
+        /// <summary>
+        /// HttpListener uses Windows HTTP.sys. Unlike localhost, a wildcard network
+        /// prefix needs a URL ACL. Request elevation once to reserve this port for
+        /// the current user; subsequent normal launches then work from other devices.
+        /// </summary>
+        private void EnsureNetworkUrlReservation(int port)
+        {
+            try
+            {
+                var account = $"{Environment.UserDomainName}\\{Environment.UserName}";
+                var prefix = $"http://+:{port}/";
+                if (HasUrlReservation(prefix))
+                    return;
+
+                var info = new ProcessStartInfo
+                {
+                    FileName = "netsh.exe",
+                    Arguments = $"http add urlacl url={prefix} user=\"{account}\"",
+                    UseShellExecute = true,
+                    Verb = "runas",
+                    CreateNoWindow = true,
+                };
+
+                using var process = Process.Start(info);
+                process?.WaitForExit();
+                if (process?.ExitCode == 0)
+                    _log($"Reserved network web UI URL {prefix} for {account}");
+            }
+            catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+            {
+                _log("Network web UI permission was declined. Enable it again and accept the Windows prompt to allow remote access.");
+            }
+            catch (Exception ex)
+            {
+                _log($"Could not reserve network web UI URL: {ex.Message}");
+            }
+        }
+
+        private static bool HasUrlReservation(string prefix)
+        {
+            try
+            {
+                using var process = Process.Start(new ProcessStartInfo
+                {
+                    FileName = "netsh.exe",
+                    Arguments = $"http show urlacl url={prefix}",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                });
+                process?.WaitForExit();
+                return process?.ExitCode == 0;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>Last startup error message, if any. Displayed in ImGui when server isn't running.</summary>

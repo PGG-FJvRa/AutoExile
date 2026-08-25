@@ -48,7 +48,7 @@ namespace AutoExile
         [Menu("Web UI Port", "Port for the web dashboard (requires restart to change).")]
         public RangeNode<int> WebUiPort { get; set; } = new RangeNode<int>(9876, 1024, 65535);
 
-        [Menu("Web UI Network Access", "Allow access from other devices on the network (requires admin or URL reservation).")]
+        [Menu("Web UI Network Access", "Allow access from other devices. Windows asks once for permission to reserve the web port; later launches do not need admin.")]
         public ToggleNode WebUiNetworkAccess { get; set; } = new ToggleNode(false);
 
         [Menu("Auto Level Gems", "Automatically level up skill gems when the level-up panel appears.")]
