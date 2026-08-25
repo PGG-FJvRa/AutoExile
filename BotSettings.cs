@@ -67,7 +67,7 @@ namespace AutoExile
         public RangeNode<int> InteractRadius { get; set; } = new RangeNode<int>(20, 10, 80);
 
         [Menu("Area Settle Time (s)", "Seconds to wait after zone transitions (entering maps, returning to hideout) before acting. Allows entities and game state to stabilize.")]
-        public RangeNode<float> AreaSettleSeconds { get; set; } = new RangeNode<float>(3f, 1f, 10f);
+        public RangeNode<float> AreaSettleSeconds { get; set; } = new RangeNode<float>(1f, 1f, 10f);
 
         // --- Build (player setup: movement, skills, combat, flasks) ---
 

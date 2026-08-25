@@ -88,8 +88,8 @@ namespace AutoExile.Systems
         private DateTime _anyWithdrawCompletedAt = DateTime.MinValue;
         private bool _storedBeforeWithdraw;
         private DateTime _withdrawTabOpenedAt = DateTime.MinValue;
-        private const float WithdrawTabLoadWaitSeconds = 3f;
-        private const float WithdrawInventorySettleSeconds = 3f;
+        private const float WithdrawTabLoadWaitSeconds = 1f;
+        private const float WithdrawInventorySettleSeconds = 1f;
 
         // Incubator state
         private bool _cursorHasIncubator;
