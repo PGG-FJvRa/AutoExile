@@ -1292,7 +1292,12 @@ function renderModeTab(container, modeName) {
         ['labyrinth.settleSeconds']]);
       addSection(container, 'Run (shared)', [['run.maxDeaths']]);
     } else if (section === 'boss') {
-      addSection(container, 'Boss', [['boss.bossType'],['boss.fragmentStock'],['boss.keyDropChaosValue']]);
+      addSection(container, 'Boss', [
+        ['boss.bossType'],
+        ['boss.fragmentStock'],
+        ['boss.bossDropValues'],
+        ['boss.bossRunCosts']
+      ]);
       addSection(container, 'Run (shared)', [['run.maxDeaths'],['run.lootSweepTimeoutSeconds'],
         ['run.stashItemThreshold'],['run.portalKey']]);
       addSection(container, 'Stash (shared)', [['stash.dumpTabName'],['stash.fragmentTabName']]);
