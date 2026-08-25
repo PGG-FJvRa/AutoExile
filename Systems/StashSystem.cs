@@ -616,6 +616,7 @@ namespace AutoExile.Systems
             }
 
             var windowRect = gc.Window.GetWindowRectangle();
+            var remainingNeeded = wantTotal - haveInInv;
             var positions = new List<Vector2>();
             foreach (var item in items)
             {
@@ -626,6 +627,8 @@ namespace AutoExile.Systems
                     positions.Add(new Vector2(
                         windowRect.X + rect.Center.X,
                         windowRect.Y + rect.Center.Y));
+                    if (positions.Count >= remainingNeeded)
+                        break;
                 }
             }
 
@@ -636,7 +639,7 @@ namespace AutoExile.Systems
                 return StashResult.InProgress;
             }
 
-            Status = $"Withdrawing '{currentPath}' ({haveInInv}/{wantTotal}, {positions.Count} stash slots)";
+            Status = $"Withdrawing '{currentPath}' ({haveInInv}/{wantTotal}, taking {positions.Count})";
             // CtrlClickBatch holds Ctrl down across every click in one async pass,
             // then releases. Items get transferred (stacks fully, single items one-per-click).
             // After the batch completes, IsBatchRunning flips back to false; the

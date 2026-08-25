@@ -502,14 +502,11 @@ namespace AutoExile
             [Menu("Fragment Stock", "Keep this many fragments in inventory. Withdraws from resource tab to maintain stock.")]
             public RangeNode<int> FragmentStock { get; set; } = new RangeNode<int>(20, 1, 60);
 
-            [Menu("Forbidden Flame Value (chaos)", "Sale value used for earnings calculations. Update this when the market changes.")]
-            public RangeNode<int> ForbiddenFlameChaosValue { get; set; } = new RangeNode<int>(2200, 0, 10000);
+            [Menu("Boss Drops & Values", "Format: Boss Name|Drop Label|Chaos Value; separate entries with semicolons. These labels are always looted and counted only after pickup succeeds. Example: Searing Exarch|Crimson Jewel|2200; Searing Exarch|Exceptional Eldritch Ember|100")]
+            public TextNode BossDropValues { get; set; } = new TextNode("Searing Exarch|Crimson Jewel|2200; Searing Exarch|Exceptional Eldritch Ember|100");
 
-            [Menu("Exceptional Eldritch Ember Value (chaos)", "Sale value used for earnings calculations. Update this when the market changes.")]
-            public RangeNode<int> ExceptionalEldritchEmberChaosValue { get; set; } = new RangeNode<int>(100, 0, 2000);
-
-            [Menu("Boss Run Cost (chaos)", "Invitation and consumable cost deducted from earnings for every entered boss arena.")]
-            public RangeNode<int> BossRunCostChaosValue { get; set; } = new RangeNode<int>(165, 0, 2000);
+            [Menu("Boss Run Costs", "Format: Boss Name|Chaos Cost; separate entries with semicolons. Cost is deducted once when a boss arena is entered. Example: Searing Exarch|165; Audience With The King|100")]
+            public TextNode BossRunCosts { get; set; } = new TextNode("Searing Exarch|165");
 
             [Menu("Fear DPS Position", "Grid position to stand at during Incarnation of Fear pre-lay phase. Format: X,Y. Use 'Set Current Pos' button to capture. Empty = default (206,320).")]
             public TextNode FearDpsPosition { get; set; } = new TextNode();

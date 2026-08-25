@@ -41,9 +41,11 @@ namespace AutoExile.Modes
         private int _deathCount;
         private int _runsCompleted;
         private int _targetItemsLooted;
-        private int _exceptionalEldritchEmbersLooted;
         private int _paidBossRuns;
         private bool _currentRunCostApplied;
+        private readonly Dictionary<string, int> _trackedDropCounts = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _activeTrackedDropLabels = new(StringComparer.OrdinalIgnoreCase);
+        private int _activeRunCost;
         private DateTime _sessionStartTime;
         private DateTime _runStartTime;
         private double _totalRunTimeMs;   // cumulative run time across completed runs
@@ -66,18 +68,19 @@ namespace AutoExile.Modes
         public int RunsCompleted => _runsCompleted;
         public int Deaths => _deathCount;
         public int TargetItemsLooted => _targetItemsLooted;
-        public int ExceptionalEldritchEmbersLooted => _exceptionalEldritchEmbersLooted;
         public int PaidBossRuns => _paidBossRuns;
+        public string TrackedDropSummary => _trackedDropCounts.Count == 0
+            ? "None"
+            : string.Join(", ", _trackedDropCounts.Select(pair => $"{pair.Key}: {pair.Value}"));
         public double AvgRunTimeSeconds => _runsCompleted > 0 ? (_totalRunTimeMs / _runsCompleted) / 1000.0 : 0;
         public double RunsPerDrop => _targetItemsLooted > 0 ? (double)_runsCompleted / _targetItemsLooted : 0;
         public double SessionSeconds => (DateTime.Now - _sessionStartTime).TotalSeconds;
         public DateTime RunStartTime => _runStartTime;
-        public double GrossEarningsChaos(int forbiddenFlameValue, int emberValue) =>
-            _targetItemsLooted * forbiddenFlameValue + _exceptionalEldritchEmbersLooted * emberValue;
-        public double NetEarningsChaos(int forbiddenFlameValue, int emberValue, int runCost) =>
-            GrossEarningsChaos(forbiddenFlameValue, emberValue) - _paidBossRuns * runCost;
-        public double ChaosPerHour(int forbiddenFlameValue, int emberValue, int runCost) =>
-            SessionSeconds > 60 ? NetEarningsChaos(forbiddenFlameValue, emberValue, runCost) / (SessionSeconds / 3600.0) : 0;
+        public double GrossEarningsChaos(BotSettings settings) => GetConfiguredDrops(settings)
+            .Sum(drop => _trackedDropCounts.GetValueOrDefault(drop.Label) * drop.ChaosValue);
+        public double NetEarningsChaos(BotSettings settings) => GrossEarningsChaos(settings) - _paidBossRuns * _activeRunCost;
+        public double ChaosPerHour(BotSettings settings) =>
+            SessionSeconds > 60 ? NetEarningsChaos(settings) / (SessionSeconds / 3600.0) : 0;
 
         public enum BossPhase
         {
@@ -100,8 +103,7 @@ namespace AutoExile.Modes
         private void TrackLootPickup(LootCandidate candidate)
         {
             if (!_trackLootPickups || _lootTracker.HasPending ||
-                _activeEncounter?.MustLootItems is not { Count: > 0 } mustLoot ||
-                !mustLoot.Any(item => candidate.ItemName.Contains(item, StringComparison.OrdinalIgnoreCase)))
+                !_activeTrackedDropLabels.Any(item => candidate.ItemName.Contains(item, StringComparison.OrdinalIgnoreCase)))
                 return;
 
             _lootTracker.SetPending(candidate.Entity.Id, candidate.ItemName, candidate.ChaosValue);
@@ -109,6 +111,37 @@ namespace AutoExile.Modes
 
         /// <summary>Called by BotCore when player dies.</summary>
         public void IncrementDeathCount() => _deathCount++;
+
+        private sealed record ConfiguredBossDrop(string Label, int ChaosValue);
+
+        private IEnumerable<ConfiguredBossDrop> GetConfiguredDrops(BotSettings settings)
+        {
+            var bossName = _activeEncounter?.Name;
+            if (string.IsNullOrWhiteSpace(bossName)) yield break;
+
+            foreach (var entry in (settings.Boss.BossDropValues.Value ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var parts = entry.Split('|', StringSplitOptions.TrimEntries);
+                if (parts.Length == 3 && parts[0].Equals(bossName, StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(parts[1]) && int.TryParse(parts[2], out var value) && value >= 0)
+                    yield return new ConfiguredBossDrop(parts[1], value);
+            }
+        }
+
+        private int GetConfiguredRunCost(BotSettings settings)
+        {
+            var bossName = _activeEncounter?.Name;
+            if (string.IsNullOrWhiteSpace(bossName)) return 0;
+
+            foreach (var entry in (settings.Boss.BossRunCosts.Value ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var parts = entry.Split('|', StringSplitOptions.TrimEntries);
+                if (parts.Length == 2 && parts[0].Equals(bossName, StringComparison.OrdinalIgnoreCase) &&
+                    int.TryParse(parts[1], out var cost) && cost >= 0)
+                    return cost;
+            }
+            return 0;
+        }
 
         // ── Mode lifecycle ──
 
@@ -134,9 +167,13 @@ namespace AutoExile.Modes
             _deathCount = 0;
             _runsCompleted = 0;
             _targetItemsLooted = 0;
-            _exceptionalEldritchEmbersLooted = 0;
             _paidBossRuns = 0;
             _currentRunCostApplied = false;
+            _activeRunCost = GetConfiguredRunCost(ctx.Settings);
+            _trackedDropCounts.Clear();
+            _activeTrackedDropLabels.Clear();
+            foreach (var drop in GetConfiguredDrops(ctx.Settings))
+                _activeTrackedDropLabels.Add(drop.Label);
             _totalRunTimeMs = 0;
             _mapCompleted = false;
             _portalKeyPressed = false;
@@ -243,17 +280,13 @@ namespace AutoExile.Modes
             if (hadPendingLoot && interactionResult == InteractionResult.Succeeded)
             {
                 // Check if this was a target item
-                if (pendingLootName.Contains("Exceptional Eldritch Ember", StringComparison.OrdinalIgnoreCase))
-                {
-                    _exceptionalEldritchEmbersLooted++;
-                    ctx.Log($"[Boss] Exceptional Eldritch Ember looted: {pendingLootName} (total: {_exceptionalEldritchEmbersLooted})");
-                }
-                else if (_activeEncounter?.TrackedLootItems is { Count: > 0 } trackedLoot &&
-                    !string.IsNullOrEmpty(pendingLootName) &&
-                    trackedLoot.Any(m => pendingLootName.Contains(m, StringComparison.OrdinalIgnoreCase)))
+                var trackedDrop = GetConfiguredDrops(ctx.Settings)
+                    .FirstOrDefault(drop => pendingLootName.Contains(drop.Label, StringComparison.OrdinalIgnoreCase));
+                if (trackedDrop != null)
                 {
                     _targetItemsLooted++;
-                    ctx.Log($"[Boss] Target item looted: {pendingLootName} (total: {_targetItemsLooted})");
+                    _trackedDropCounts[trackedDrop.Label] = _trackedDropCounts.GetValueOrDefault(trackedDrop.Label) + 1;
+                    ctx.Log($"[Boss] Tracked drop looted: {trackedDrop.Label} (total: {_trackedDropCounts[trackedDrop.Label]})");
                 }
             }
 
@@ -314,6 +347,10 @@ namespace AutoExile.Modes
             var bossSettings = ctx.Settings.Boss;
             var stashSettings = ctx.Settings.Stash;
             var runSettings = ctx.Settings.Run;
+            _activeRunCost = GetConfiguredRunCost(ctx.Settings);
+            _activeTrackedDropLabels.Clear();
+            foreach (var drop in GetConfiguredDrops(ctx.Settings))
+                _activeTrackedDropLabels.Add(drop.Label);
 
             // Some special invitations are loaded manually into the map device. Do not
             // require a matching inventory/stash path in that case: MapDeviceSystem
@@ -757,11 +794,11 @@ namespace AutoExile.Modes
                 ModeHelpers.EnableDefaultCombat(ctx);
                 ctx.Loot.ClearFailed();
 
-                // Apply encounter-specific loot whitelist
+                // Apply built-in encounter drops plus user-configured, valued drops.
+                ctx.Loot.MustLootItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 if (_activeEncounter?.MustLootItems is { Count: > 0 } items)
-                    ctx.Loot.MustLootItems = new HashSet<string>(items, StringComparer.OrdinalIgnoreCase);
-                else
-                    ctx.Loot.MustLootItems.Clear();
+                    ctx.Loot.MustLootItems.UnionWith(items);
+                ctx.Loot.MustLootItems.UnionWith(_activeTrackedDropLabels);
 
                 Status = $"Entered {newArea}";
                 ctx.Log($"[Boss] Entered zone: {newArea}");
