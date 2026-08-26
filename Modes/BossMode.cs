@@ -543,6 +543,7 @@ namespace AutoExile.Modes
         private bool _searchingForExitPortal;
         private int _exitSearchIndex;
         private DateTime _lastExitSearchMove = DateTime.MinValue;
+        private DateTime _exitPortalStoppedAt = DateTime.MinValue;
         private static readonly Vector2[] ExitSearchOffsets =
         {
             new(0, 0), new(0, -18), new(18, 0), new(0, 18), new(-18, 0),
@@ -602,8 +603,24 @@ namespace AutoExile.Modes
                 {
                     if (nearbyExit.DistancePlayer > 10)
                     {
+                        _exitPortalStoppedAt = DateTime.MinValue;
                         MoveDirectlyToward(ctx, nearbyExit.GridPosNum);
                         Status = $"Walking directly to exit portal ({nearbyExit.DistancePlayer:F0}g) {exitCountdown}";
+                        return;
+                    }
+
+                    // The manual search movement holds the move key continuously.
+                    // Release it first so the camera/portal target is stable for the click.
+                    if (_exitPortalStoppedAt == DateTime.MinValue)
+                    {
+                        ctx.Navigation.Stop(gc);
+                        _exitPortalStoppedAt = DateTime.Now;
+                        Status = $"At exit portal — stopping before click {exitCountdown}";
+                        return;
+                    }
+                    if ((DateTime.Now - _exitPortalStoppedAt).TotalMilliseconds < 250)
+                    {
+                        Status = $"At exit portal — settling before click {exitCountdown}";
                         return;
                     }
 
@@ -646,6 +663,7 @@ namespace AutoExile.Modes
                     _searchingForExitPortal = true;
                     _exitSearchIndex = 0;
                     _lastExitSearchMove = DateTime.MinValue;
+                    _exitPortalStoppedAt = DateTime.MinValue;
                     ctx.Interaction.Cancel(gc);
                     return;
                 }
