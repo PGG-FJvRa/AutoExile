@@ -467,6 +467,7 @@ namespace AutoExile.Modes
                 _phase = BossPhase.ExitMap;
                 _phaseStartTime = DateTime.Now;
                 _exitPortalAttempts = 0;
+                _lastExitPortalFailure = "";
                 ctx.Log("[Boss] Loot sweep timeout — exiting");
                 return;
             }
@@ -529,12 +530,14 @@ namespace AutoExile.Modes
             _phase = BossPhase.ExitMap;
             _phaseStartTime = DateTime.Now;
             _exitPortalAttempts = 0;
+            _lastExitPortalFailure = "";
             ctx.Log("[Boss] Loot sweep done — exiting");
         }
 
         // ── Exit map ──
 
         private int _exitPortalAttempts;
+        private string _lastExitPortalFailure = "";
 
         private void TickExitMap(BotContext ctx, GameController gc)
         {
@@ -590,15 +593,20 @@ namespace AutoExile.Modes
                 }
 
                 // Check if previous attempt failed
-                if (!string.IsNullOrEmpty(ctx.Interaction.LastFailReason))
+                var failureReason = ctx.Interaction.LastFailReason;
+                if (!string.IsNullOrEmpty(failureReason) &&
+                    !failureReason.Equals(_lastExitPortalFailure, StringComparison.OrdinalIgnoreCase))
                 {
                     _exitPortalAttempts++;
-                    ctx.Log($"[Boss] Portal click failed: {ctx.Interaction.LastFailReason} (attempt {_exitPortalAttempts})");
+                    _lastExitPortalFailure = failureReason;
+                    ctx.Log($"[Boss] Portal click failed: {failureReason} (attempt {_exitPortalAttempts})");
                 }
 
-                // Retry — start new interaction
-                ctx.Interaction.InteractWithEntity(portal, ctx.Navigation);
-                Status = $"Clicking exit portal (attempt {_exitPortalAttempts + 1}) {exitCountdown}";
+                // Boss exit portals are visible interaction targets. Do not route
+                // through A* here: Crux of Nothingness frequently reports no path
+                // even though the portal can be clicked directly from the arena.
+                ctx.Interaction.InteractWithEntity(portal, ctx.Navigation, requireProximity: false);
+                Status = $"Direct-clicking exit portal (attempt {_exitPortalAttempts + 1}) {exitCountdown}";
                 return;
             }
 
