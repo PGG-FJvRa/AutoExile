@@ -689,12 +689,31 @@ namespace AutoExile.Modes
         {
             var screenPos = Pathfinding.GridToScreen(ctx.Game, targetGrid);
             var windowRect = ctx.Game.Window.GetWindowRectangle();
-            if (screenPos.X <= 0 || screenPos.X >= windowRect.Width ||
-                screenPos.Y <= 0 || screenPos.Y >= windowRect.Height)
-                return;
+            var center = new Vector2(windowRect.Width / 2f, windowRect.Height / 2f);
+            Vector2 absolutePos;
 
-            var absolutePos = new Vector2(windowRect.X + screenPos.X, windowRect.Y + screenPos.Y);
-            BotInput.StartMovement(absolutePos, ctx.Navigation.MoveKey);
+            if (screenPos.X > 0 && screenPos.X < windowRect.Width &&
+                screenPos.Y > 0 && screenPos.Y < windowRect.Height)
+            {
+                absolutePos = new Vector2(windowRect.X + screenPos.X, windowRect.Y + screenPos.Y);
+            }
+            else
+            {
+                // An off-screen portal is still a valid direction to walk. Move
+                // toward the corresponding interior edge rather than returning
+                // without issuing input.
+                var direction = screenPos - center;
+                if (direction.LengthSquared() < 1f)
+                    return;
+                direction = Vector2.Normalize(direction);
+                var edge = center + direction * Math.Min(center.X, center.Y) * 0.8f;
+                absolutePos = new Vector2(windowRect.X + edge.X, windowRect.Y + edge.Y);
+            }
+
+            if (BotInput.IsMovementActive && !BotInput.IsMovementSuspended)
+                BotInput.UpdateMovementCursor(absolutePos);
+            else
+                BotInput.StartMovement(absolutePos, ctx.Navigation.MoveKey);
         }
 
         /// <summary>
