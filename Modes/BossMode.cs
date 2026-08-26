@@ -380,7 +380,11 @@ namespace AutoExile.Modes
                 resourceTabName: string.IsNullOrWhiteSpace(stashSettings.FragmentTabName.Value) ? null : stashSettings.FragmentTabName.Value,
                 withdrawFragmentPath: _activeEncounter.InventoryFragmentPath,
                 fragmentStock: bossSettings.FragmentStock.Value,
-                minFragments: _activeEncounter.FragmentCost);
+                minFragments: _activeEncounter.FragmentCost,
+                // Replenishment must be a single ordered pass: dump old loot,
+                // withdraw the configured stock, then close. This avoids a second
+                // generic stash pass interfering with newly withdrawn invitations.
+                storeBeforeWithdraw: true);
             Status = $"Hideout — preparing {_activeEncounter.Name}";
         }
 

@@ -666,6 +666,16 @@ namespace AutoExile.Systems
                     return; // stay in WithdrawItems phase, next tick processes the next item
                 }
             }
+
+            // A store-before-withdraw flow has already completed its dump pass.
+            // Closing now preserves the fresh fragment stock and avoids reopening
+            // the store phase with stale inventory data.
+            if (StoreBeforeWithdraw)
+            {
+                Status = "Fragment withdrawal complete — closing stash for map device";
+                EnterCloseStash();
+                return;
+            }
             EnterStorePhase(gc);
         }
 
@@ -779,7 +789,10 @@ namespace AutoExile.Systems
             foreach (var item in items)
             {
                 if (item.Item?.Path?.Contains(pathSubstring, StringComparison.OrdinalIgnoreCase) == true)
-                    count++;
+                {
+                    var stack = item.Item.GetComponent<Stack>();
+                    count += stack?.Size > 0 ? stack.Size : 1;
+                }
             }
             return count;
         }

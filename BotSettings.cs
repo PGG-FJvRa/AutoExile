@@ -506,7 +506,7 @@ namespace AutoExile
             public TextNode BossDropValues { get; set; } = new TextNode("Searing Exarch|Crimson Jewel|2200; Searing Exarch|Exceptional Eldritch Ember|100");
 
             [Menu("Boss Run Costs", "Format: Boss Name|Chaos Cost; separate entries with semicolons. Cost is deducted once when a boss arena is entered. Example: Searing Exarch|165; Audience With The King|100")]
-            public TextNode BossRunCosts { get; set; } = new TextNode("Searing Exarch|165");
+            public TextNode BossRunCosts { get; set; } = new TextNode("Searing Exarch|165; Audience With The King|49");
 
             [Menu("Fear DPS Position", "Grid position to stand at during Incarnation of Fear pre-lay phase. Format: X,Y. Use 'Set Current Pos' button to capture. Empty = default (206,320).")]
             public TextNode FearDpsPosition { get; set; } = new TextNode();
