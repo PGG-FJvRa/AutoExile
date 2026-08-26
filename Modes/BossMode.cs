@@ -544,6 +544,10 @@ namespace AutoExile.Modes
         private int _exitSearchIndex;
         private DateTime _lastExitSearchMove = DateTime.MinValue;
         private DateTime _exitPortalStoppedAt = DateTime.MinValue;
+        private DateTime _exitPortalClickStartedAt = DateTime.MinValue;
+        private DateTime _lastExitPortalDirectClickAt = DateTime.MinValue;
+        private const int ExitPortalDirectClickIntervalMs = 250;
+        private const float ExitPortalDirectClickTimeoutSeconds = 15f;
         private static readonly Vector2[] ExitSearchOffsets =
         {
             new(0, 0), new(0, -18), new(18, 0), new(0, 18), new(-18, 0),
@@ -604,6 +608,7 @@ namespace AutoExile.Modes
                     if (nearbyExit.DistancePlayer > 10)
                     {
                         _exitPortalStoppedAt = DateTime.MinValue;
+                        _exitPortalClickStartedAt = DateTime.MinValue;
                         MoveDirectlyToward(ctx, nearbyExit.GridPosNum);
                         Status = $"Walking directly to exit portal ({nearbyExit.DistancePlayer:F0}g) {exitCountdown}";
                         return;
@@ -624,9 +629,27 @@ namespace AutoExile.Modes
                         return;
                     }
 
-                    if (!ctx.Interaction.IsBusy)
-                        ctx.Interaction.InteractWithEntity(nearbyExit, ctx.Navigation, requireProximity: false);
-                    Status = $"Direct-clicking nearby exit portal {exitCountdown}";
+                    if (_exitPortalClickStartedAt == DateTime.MinValue)
+                    {
+                        _exitPortalClickStartedAt = DateTime.Now;
+                        _lastExitPortalDirectClickAt = DateTime.MinValue;
+                    }
+
+                    var clickElapsed = (DateTime.Now - _exitPortalClickStartedAt).TotalSeconds;
+                    if (clickElapsed >= ExitPortalDirectClickTimeoutSeconds)
+                    {
+                        _searchingForExitPortal = false;
+                        _exitPortalClickStartedAt = DateTime.MinValue;
+                        Status = "Exit portal direct-click timeout — resuming search";
+                        return;
+                    }
+
+                    if ((DateTime.Now - _lastExitPortalDirectClickAt).TotalMilliseconds >= ExitPortalDirectClickIntervalMs)
+                    {
+                        BotInput.ClickEntity(gc, nearbyExit);
+                        _lastExitPortalDirectClickAt = DateTime.Now;
+                    }
+                    Status = $"Clicking exit portal every 250ms ({clickElapsed:F0}/{ExitPortalDirectClickTimeoutSeconds:F0}s) {exitCountdown}";
                     return;
                 }
 
@@ -664,6 +687,7 @@ namespace AutoExile.Modes
                     _exitSearchIndex = 0;
                     _lastExitSearchMove = DateTime.MinValue;
                     _exitPortalStoppedAt = DateTime.MinValue;
+                    _exitPortalClickStartedAt = DateTime.MinValue;
                     ctx.Interaction.Cancel(gc);
                     return;
                 }
