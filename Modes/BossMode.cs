@@ -468,6 +468,7 @@ namespace AutoExile.Modes
                 _phaseStartTime = DateTime.Now;
                 _exitPortalAttempts = 0;
                 _lastExitPortalFailure = "";
+                _usePortalScrollForExit = false;
                 ctx.Log("[Boss] Loot sweep timeout — exiting");
                 return;
             }
@@ -531,6 +532,7 @@ namespace AutoExile.Modes
             _phaseStartTime = DateTime.Now;
             _exitPortalAttempts = 0;
             _lastExitPortalFailure = "";
+            _usePortalScrollForExit = false;
             ctx.Log("[Boss] Loot sweep done — exiting");
         }
 
@@ -538,6 +540,7 @@ namespace AutoExile.Modes
 
         private int _exitPortalAttempts;
         private string _lastExitPortalFailure = "";
+        private bool _usePortalScrollForExit;
 
         private void TickExitMap(BotContext ctx, GameController gc)
         {
@@ -582,6 +585,34 @@ namespace AutoExile.Modes
                 return;
             }
 
+            // Some boss transitions are visible but cannot be clicked or routed to
+            // (notably King arena exits). Once that happens, open and use the
+            // player's own portal rather than retrying the broken transition.
+            if (_usePortalScrollForExit)
+            {
+                var townPortal = gc.EntityListWrapper.ValidEntitiesByType[EntityType.TownPortal]
+                    .FirstOrDefault(entity => entity.IsTargetable);
+                if (townPortal != null)
+                {
+                    if (!ctx.Interaction.IsBusy)
+                        ctx.Interaction.InteractWithEntity(townPortal, ctx.Navigation, requireProximity: false);
+                    Status = $"Direct-clicking portal-scroll exit {exitCountdown}";
+                    return;
+                }
+
+                if (!_portalKeyPressed)
+                {
+                    BotInput.PressKey(ctx.Settings.Run.PortalKey.Value);
+                    _portalKeyPressed = true;
+                    _lastActionTime = DateTime.Now;
+                    Status = $"Opening portal-scroll exit... {exitCountdown}";
+                    return;
+                }
+
+                Status = $"Waiting for portal-scroll exit... {exitCountdown}";
+                return;
+            }
+
             // Try existing portals first (boss zones have pre-placed exit portals like RitualBossPortal)
             var portal = FindExitPortal(gc);
             if (portal != null)
@@ -600,6 +631,10 @@ namespace AutoExile.Modes
                     _exitPortalAttempts++;
                     _lastExitPortalFailure = failureReason;
                     ctx.Log($"[Boss] Portal click failed: {failureReason} (attempt {_exitPortalAttempts})");
+                    _usePortalScrollForExit = true;
+                    _portalKeyPressed = false;
+                    ctx.Interaction.Cancel(gc);
+                    return;
                 }
 
                 // Boss exit portals are visible interaction targets. Do not route
