@@ -468,7 +468,7 @@ namespace AutoExile.Modes
                 _phaseStartTime = DateTime.Now;
                 _exitPortalAttempts = 0;
                 _lastExitPortalFailure = "";
-                _usePortalScrollForExit = false;
+                _searchingForExitPortal = false;
                 ctx.Log("[Boss] Loot sweep timeout — exiting");
                 return;
             }
@@ -532,7 +532,7 @@ namespace AutoExile.Modes
             _phaseStartTime = DateTime.Now;
             _exitPortalAttempts = 0;
             _lastExitPortalFailure = "";
-            _usePortalScrollForExit = false;
+            _searchingForExitPortal = false;
             ctx.Log("[Boss] Loot sweep done — exiting");
         }
 
@@ -540,7 +540,14 @@ namespace AutoExile.Modes
 
         private int _exitPortalAttempts;
         private string _lastExitPortalFailure = "";
-        private bool _usePortalScrollForExit;
+        private bool _searchingForExitPortal;
+        private int _exitSearchIndex;
+        private DateTime _lastExitSearchMove = DateTime.MinValue;
+        private static readonly Vector2[] ExitSearchOffsets =
+        {
+            new(0, 0), new(0, -18), new(18, 0), new(0, 18), new(-18, 0),
+            new(18, -18), new(18, 18), new(-18, 18), new(-18, -18),
+        };
 
         private void TickExitMap(BotContext ctx, GameController gc)
         {
@@ -585,31 +592,36 @@ namespace AutoExile.Modes
                 return;
             }
 
-            // Some boss transitions are visible but cannot be clicked or routed to
-            // (notably King arena exits). Once that happens, open and use the
-            // player's own portal rather than retrying the broken transition.
-            if (_usePortalScrollForExit)
+            // King exits can produce a false "no path" result in its small arena.
+            // Walk directly around the cached entry/exit point instead of using a
+            // portal scroll, which cannot be used in a boss arena.
+            if (_searchingForExitPortal)
             {
-                var townPortal = gc.EntityListWrapper.ValidEntitiesByType[EntityType.TownPortal]
-                    .FirstOrDefault(entity => entity.IsTargetable);
-                if (townPortal != null)
+                var nearbyExit = FindExitPortal(gc);
+                if (nearbyExit != null)
                 {
+                    if (nearbyExit.DistancePlayer > 10)
+                    {
+                        MoveDirectlyToward(ctx, nearbyExit.GridPosNum);
+                        Status = $"Walking directly to exit portal ({nearbyExit.DistancePlayer:F0}g) {exitCountdown}";
+                        return;
+                    }
+
                     if (!ctx.Interaction.IsBusy)
-                        ctx.Interaction.InteractWithEntity(townPortal, ctx.Navigation, requireProximity: false);
-                    Status = $"Direct-clicking portal-scroll exit {exitCountdown}";
+                        ctx.Interaction.InteractWithEntity(nearbyExit, ctx.Navigation, requireProximity: false);
+                    Status = $"Direct-clicking nearby exit portal {exitCountdown}";
                     return;
                 }
 
-                if (!_portalKeyPressed)
+                var center = _entryPortalPos ?? gc.Player.GridPosNum;
+                var searchTarget = center + ExitSearchOffsets[_exitSearchIndex % ExitSearchOffsets.Length];
+                if ((DateTime.Now - _lastExitSearchMove).TotalSeconds >= 1)
                 {
-                    BotInput.PressKey(ctx.Settings.Run.PortalKey.Value);
-                    _portalKeyPressed = true;
-                    _lastActionTime = DateTime.Now;
-                    Status = $"Opening portal-scroll exit... {exitCountdown}";
-                    return;
+                    MoveDirectlyToward(ctx, searchTarget);
+                    _exitSearchIndex++;
+                    _lastExitSearchMove = DateTime.Now;
                 }
-
-                Status = $"Waiting for portal-scroll exit... {exitCountdown}";
+                Status = $"Searching small arena for exit portal ({_exitSearchIndex}/{ExitSearchOffsets.Length}) {exitCountdown}";
                 return;
             }
 
@@ -631,8 +643,9 @@ namespace AutoExile.Modes
                     _exitPortalAttempts++;
                     _lastExitPortalFailure = failureReason;
                     ctx.Log($"[Boss] Portal click failed: {failureReason} (attempt {_exitPortalAttempts})");
-                    _usePortalScrollForExit = true;
-                    _portalKeyPressed = false;
+                    _searchingForExitPortal = true;
+                    _exitSearchIndex = 0;
+                    _lastExitSearchMove = DateTime.MinValue;
                     ctx.Interaction.Cancel(gc);
                     return;
                 }
@@ -670,6 +683,18 @@ namespace AutoExile.Modes
             }
 
             Status = $"Waiting for portal... {exitCountdown}";
+        }
+
+        private static void MoveDirectlyToward(BotContext ctx, Vector2 targetGrid)
+        {
+            var screenPos = Pathfinding.GridToScreen(ctx.Game, targetGrid);
+            var windowRect = ctx.Game.Window.GetWindowRectangle();
+            if (screenPos.X <= 0 || screenPos.X >= windowRect.Width ||
+                screenPos.Y <= 0 || screenPos.Y >= windowRect.Height)
+                return;
+
+            var absolutePos = new Vector2(windowRect.X + screenPos.X, windowRect.Y + screenPos.Y);
+            BotInput.StartMovement(absolutePos, ctx.Navigation.MoveKey);
         }
 
         /// <summary>
