@@ -19,7 +19,7 @@ namespace AutoExile.Systems
     public class SellExchangeSystem
     {
         private const string FaustusPath = "Metadata/NPC/League/Kalguur/VillageFaustusHideout";
-        private const int ClickCooldownMs = 400;
+        private const int ClickCooldownMs = 500;
         private const float StateTimeoutSeconds = 12f;
         private const string WantCurrencyBaseName = "Chaos Orb";
 
@@ -43,7 +43,6 @@ namespace AutoExile.Systems
         private int _maxOrders = 3;
         private double _thresholdChaos = 50.0;
         private HashSet<string> _exclusions = new(StringComparer.OrdinalIgnoreCase);
-        private NinjaPriceCategory[] _eligibleCategories = EligibleCats;
         private bool _havePicked;
         private bool _wantPicked;
         private bool _ownedFilter; // = finished typing the search filter for this candidate
@@ -100,8 +99,7 @@ namespace AutoExile.Systems
         }
 
         /// <summary>Begin a sell run. Candidates are computed from the exchange once the panel opens.</summary>
-        public void Start(int maxOrders, double thresholdChaos, HashSet<string> exclusions,
-            NinjaPriceCategory[]? eligibleCategories = null)
+        public void Start(int maxOrders, double thresholdChaos, HashSet<string> exclusions)
         {
             _queue.Clear();
             _current = "";
@@ -109,7 +107,6 @@ namespace AutoExile.Systems
             _maxOrders = System.Math.Max(1, maxOrders);
             _thresholdChaos = thresholdChaos;
             _exclusions = exclusions ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            _eligibleCategories = eligibleCategories is { Length: > 0 } ? eligibleCategories : EligibleCats;
             _havePicked = false;
             _wantPicked = false;
             _log.Clear();
@@ -1070,7 +1067,7 @@ namespace AutoExile.Systems
 
         private double UnitChaos(BotContext ctx, string name)
         {
-            foreach (var cat in _eligibleCategories)
+            foreach (var cat in EligibleCats)
             {
                 var pr = ctx.NinjaPrice.GetPrice(name, cat);
                 if (pr.MaxChaosValue > 0.0) return pr.MaxChaosValue;

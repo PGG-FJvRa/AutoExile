@@ -1,5 +1,4 @@
 using ExileCore;
-using ExileCore.PoEMemory;
 using ExileCore.PoEMemory.Components;
 using ExileCore.PoEMemory.MemoryObjects;
 using ExileCore.Shared.Enums;
@@ -65,9 +64,6 @@ namespace AutoExile.Systems
         /// <see cref="WithdrawCount"/> controls how many slots to take.</summary>
         public bool WithdrawAnyItem { get; set; }
 
-        /// <summary>Optional filter for generic withdrawals. Only matching visible tab items are taken.</summary>
-        public Func<Element, bool>? WithdrawItemFilter { get; set; }
-
         /// <summary>When true, run the store pass before switching to the withdraw tab.</summary>
         public bool StoreBeforeWithdraw { get; set; }
 
@@ -119,7 +115,6 @@ namespace AutoExile.Systems
             Func<ServerInventory.InventSlotItem, bool>? itemFilter = null,
             IReadOnlyList<(string PathSubstring, int Count)>? withdrawList = null,
             bool withdrawAnyItem = false,
-            Func<Element, bool>? withdrawItemFilter = null,
             bool storeBeforeWithdraw = false)
         {
             if (_phase != StashPhase.Idle)
@@ -131,7 +126,6 @@ namespace AutoExile.Systems
             WithdrawFragmentPath = withdrawFragmentPath;
             WithdrawCount        = withdrawCount;
             WithdrawAnyItem      = withdrawAnyItem;
-            WithdrawItemFilter   = withdrawItemFilter;
             StoreBeforeWithdraw  = storeBeforeWithdraw;
             ItemFilter           = itemFilter;
 
@@ -545,7 +539,7 @@ namespace AutoExile.Systems
                 }
 
                 var anyItems = stashEl.VisibleStash?.VisibleInventoryItems?
-                    .Where(item => item.Entity != null && (WithdrawItemFilter == null || WithdrawItemFilter(item)))
+                    .Where(item => item.Entity != null)
                     .Take(Math.Max(1, WithdrawCount))
                     .ToList();
                 if (anyItems == null || anyItems.Count == 0)

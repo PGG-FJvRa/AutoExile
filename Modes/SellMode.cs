@@ -11,8 +11,6 @@ namespace AutoExile.Modes
     public class SellMode : IBotMode
     {
         private readonly SellExchangeSystem _sell = new();
-        private bool _withdrawingScarabs;
-        private bool _scarabsWithdrawn;
         private bool _started;
         private bool _done;
 
@@ -26,38 +24,16 @@ namespace AutoExile.Modes
 
         public IReadOnlyList<string> Log => _sell.Log;
 
-        public void OnEnter(BotContext ctx) { _started = false; _done = false; _scarabsWithdrawn = false; _withdrawingScarabs = false; }
-        public void OnExit() { _sell.Cancel(); _withdrawingScarabs = false; }
+        public void OnEnter(BotContext ctx) { _started = false; _done = false; }
+        public void OnExit() { _sell.Cancel(); }
 
         /// <summary>Reset so the next Tick begins a fresh sell run (called on the bot's stopped→running
         /// edge, so Stop then Start re-runs the sell instead of idling on the previous completed run).</summary>
-        public void Restart() { _started = false; _done = false; _scarabsWithdrawn = false; _withdrawingScarabs = false; _sell.Cancel(); }
+        public void Restart() { _started = false; _done = false; _sell.Cancel(); }
 
         public void Tick(BotContext ctx)
         {
             if (_done) return;
-
-            var scarabTab = ctx.Settings.Build.ScarabSellTabName.Value;
-            if (!_scarabsWithdrawn && !string.IsNullOrWhiteSpace(scarabTab))
-            {
-                if (!_withdrawingScarabs)
-                {
-                    _withdrawingScarabs = ctx.Stash.Start(
-                        withdrawTabName: scarabTab,
-                        withdrawCount: 60,
-                        itemFilter: _ => false,
-                        withdrawAnyItem: true,
-                        withdrawItemFilter: item => item.Entity?.Path?.Contains("Metadata/Items/Scarabs/", StringComparison.OrdinalIgnoreCase) == true);
-                }
-
-                var stashResult = ctx.Stash.Tick(ctx.Game, ctx.Navigation);
-                if (stashResult is StashResult.Succeeded or StashResult.Failed)
-                {
-                    _scarabsWithdrawn = true;
-                    _withdrawingScarabs = false;
-                }
-                return;
-            }
 
             if (!_started)
             {
@@ -65,8 +41,7 @@ namespace AutoExile.Modes
                 foreach (var e in (ctx.Settings.Build.SellExclusions.Value ?? "")
                          .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                     excl.Add(e);
-                _sell.Start(ctx.Settings.Build.SellMaxOrdersPerRun.Value, 0.0, excl,
-                    new[] { NinjaPriceCategory.Scarab });
+                _sell.Start(ctx.Settings.Build.SellMaxOrdersPerRun.Value, 50.0, excl);
                 _started = true;
             }
 

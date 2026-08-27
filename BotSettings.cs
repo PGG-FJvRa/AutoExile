@@ -211,9 +211,6 @@ namespace AutoExile
             [Menu("Sell Max Orders / Run", "Safety cap on how many sell orders a single run places.")]
             public RangeNode<int> SellMaxOrdersPerRun { get; set; } = new RangeNode<int>(10, 1, 10);
 
-            [Menu("Scarab Sell Tab", "Exact stash tab name containing scarabs to sell through Faustus. Leave empty to use the normal Sell mode without withdrawing from stash.")]
-            public TextNode ScarabSellTabName { get; set; } = new TextNode("");
-
             [Menu("Default Positioning", "How to position relative to monsters. Modes can override.")]
             public ListNode DefaultPositioning { get; set; } = new ListNode();
 
