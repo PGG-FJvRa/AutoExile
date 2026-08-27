@@ -41,7 +41,10 @@ namespace AutoExile.Modes
                 foreach (var e in (ctx.Settings.Build.SellExclusions.Value ?? "")
                          .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                     excl.Add(e);
-                _sell.Start(ctx.Settings.Build.SellMaxOrdersPerRun.Value, 50.0, excl);
+                // Use every priced, non-excluded exchange item. The old 50c cutoff
+                // made the mode report "no candidates" whenever no single owned
+                // stack reached that value.
+                _sell.Start(ctx.Settings.Build.SellMaxOrdersPerRun.Value, 0.0, excl);
                 _started = true;
             }
 
