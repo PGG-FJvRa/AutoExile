@@ -29,6 +29,7 @@ namespace AutoExile.Modes.Shared
         private int _fragmentStock; // target number of fragments to maintain in inventory
         private int _minFragments; // minimum fragments needed to open (0 = any amount works)
         private bool _withdrawAnyItem;
+        private Func<Element, bool>? _withdrawItemFilter;
         private Func<ServerInventory.InventSlotItem, bool>? _inventoryResourceFilter;
         private bool _storeBeforeWithdraw;
 
@@ -66,6 +67,7 @@ namespace AutoExile.Modes.Shared
             IReadOnlyList<string>? scarabPaths = null,
             bool forceCtrlClick = false,
             bool withdrawAnyItem = false,
+            Func<Element, bool>? withdrawItemFilter = null,
             Func<ServerInventory.InventSlotItem, bool>? inventoryResourceFilter = null,
             bool storeBeforeWithdraw = false)
         {
@@ -81,6 +83,7 @@ namespace AutoExile.Modes.Shared
             _fragmentStock = fragmentStock;
             _minFragments = minFragments;
             _withdrawAnyItem = withdrawAnyItem;
+            _withdrawItemFilter = withdrawItemFilter;
             _inventoryResourceFilter = inventoryResourceFilter;
             _storeBeforeWithdraw = storeBeforeWithdraw;
             _withdrawList = withdrawList != null && withdrawList.Count > 0 ? withdrawList : null;
@@ -137,6 +140,7 @@ namespace AutoExile.Modes.Shared
             _fragmentStock = 0;
             _minFragments = 1;
             _withdrawAnyItem = false;
+            _withdrawItemFilter = null;
             _inventoryResourceFilter = null;
             _storeBeforeWithdraw = false;
             _withdrawList = null;
@@ -229,6 +233,7 @@ namespace AutoExile.Modes.Shared
                     itemFilter:           shouldStore ? _stashItemFilter : (_ => false),
                     withdrawList:         activeWithdrawList,
                     withdrawAnyItem:      needAnyWithdraw,
+                    withdrawItemFilter:   _withdrawItemFilter,
                     storeBeforeWithdraw:  _storeBeforeWithdraw && needWithdraw);
                 var parts = new List<string>();
                 if (needSingleWithdraw) parts.Add($"withdraw {withdrawNeeded} fragments");
