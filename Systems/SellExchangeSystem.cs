@@ -19,7 +19,7 @@ namespace AutoExile.Systems
     public class SellExchangeSystem
     {
         private const string FaustusPath = "Metadata/NPC/League/Kalguur/VillageFaustusHideout";
-        private const int ClickCooldownMs = 500;
+        private const int ClickCooldownMs = 400;
         private const float StateTimeoutSeconds = 12f;
         private const string WantCurrencyBaseName = "Chaos Orb";
 

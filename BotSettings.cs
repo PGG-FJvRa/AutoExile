@@ -209,7 +209,7 @@ namespace AutoExile
             public ToggleNode SellSurplusNow { get; set; } = new ToggleNode(false);
 
             [Menu("Sell Max Orders / Run", "Safety cap on how many sell orders a single run places.")]
-            public RangeNode<int> SellMaxOrdersPerRun { get; set; } = new RangeNode<int>(10, 1, 10);
+            public RangeNode<int> SellMaxOrdersPerRun { get; set; } = new RangeNode<int>(3, 1, 10);
 
             [Menu("Default Positioning", "How to position relative to monsters. Modes can override.")]
             public ListNode DefaultPositioning { get; set; } = new ListNode();
