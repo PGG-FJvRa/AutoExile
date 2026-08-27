@@ -44,7 +44,10 @@ namespace AutoExile.Modes
                 // Use every priced, non-excluded exchange item. The old 50c cutoff
                 // made the mode report "no candidates" whenever no single owned
                 // stack reached that value.
-                _sell.Start(ctx.Settings.Build.SellMaxOrdersPerRun.Value, 0.0, excl);
+                var categories = ctx.Settings.Build.SellScarabsOnly.Value
+                    ? new[] { NinjaPriceCategory.Scarab }
+                    : null;
+                _sell.Start(ctx.Settings.Build.SellMaxOrdersPerRun.Value, 0.0, excl, categories);
                 _started = true;
             }
 
