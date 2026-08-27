@@ -274,10 +274,16 @@ namespace AutoExile.Systems
 
             rows.Sort((a, b) => b.total.CompareTo(a.total));
             _queue.Clear();
+            var queuedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             int added = 0;
             foreach (var r in rows)
             {
                 if (added >= _maxOrders) break;
+                // The exchange picker can expose the same owned item through
+                // multiple entries. The queue is built before the first order
+                // consumes it, so scheduling duplicates makes us try to sell an
+                // already-empty item again.
+                if (!queuedNames.Add(r.name)) continue;
                 _queue.Enqueue((r.name, r.qty));
                 added++;
             }
