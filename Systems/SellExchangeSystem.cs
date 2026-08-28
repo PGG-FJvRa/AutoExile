@@ -43,7 +43,7 @@ namespace AutoExile.Systems
         private int _maxOrders = 3;
         private double _thresholdChaos = 50.0;
         private HashSet<string> _exclusions = new(StringComparer.OrdinalIgnoreCase);
-        private NinjaPriceCategory[] _eligibleCategories = EligibleCats;
+        private bool _scarabsOnly;
         private bool _havePicked;
         private bool _wantPicked;
         private bool _ownedFilter; // = finished typing the search filter for this candidate
@@ -101,7 +101,7 @@ namespace AutoExile.Systems
 
         /// <summary>Begin a sell run. Candidates are computed from the exchange once the panel opens.</summary>
         public void Start(int maxOrders, double thresholdChaos, HashSet<string> exclusions,
-            NinjaPriceCategory[]? eligibleCategories = null)
+            bool scarabsOnly = false)
         {
             _queue.Clear();
             _current = "";
@@ -109,7 +109,7 @@ namespace AutoExile.Systems
             _maxOrders = System.Math.Max(1, maxOrders);
             _thresholdChaos = thresholdChaos;
             _exclusions = exclusions ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            _eligibleCategories = eligibleCategories is { Length: > 0 } ? eligibleCategories : EligibleCats;
+            _scarabsOnly = scarabsOnly;
             _havePicked = false;
             _wantPicked = false;
             _log.Clear();
@@ -263,6 +263,17 @@ namespace AutoExile.Systems
                     string name = null;
                     try { name = (string)opt.ItemType.BaseName; } catch { }
                     if (string.IsNullOrEmpty(name) || _exclusions.Contains(name)) continue;
+                    // Price categories alone are insufficient here: a name can
+                    // appear in another category's data. Restrict the picker
+                    // entry itself to the game's scarab metadata path.
+                    if (_scarabsOnly)
+                    {
+                        string metadata = null;
+                        try { metadata = (string)opt.ItemType.Metadata; } catch { }
+                        if (string.IsNullOrEmpty(metadata) ||
+                            !metadata.StartsWith("Metadata/Items/Scarabs/", StringComparison.OrdinalIgnoreCase))
+                            continue;
+                    }
                     int qty = ReadPickerQty((ExileCore.PoEMemory.Element)opt);
                     if (qty <= 0) continue;
                     double unit = UnitChaos(ctx, name);
@@ -1076,7 +1087,7 @@ namespace AutoExile.Systems
 
         private double UnitChaos(BotContext ctx, string name)
         {
-            foreach (var cat in _eligibleCategories)
+            foreach (var cat in EligibleCats)
             {
                 var pr = ctx.NinjaPrice.GetPrice(name, cat);
                 if (pr.MaxChaosValue > 0.0) return pr.MaxChaosValue;
