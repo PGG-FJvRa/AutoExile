@@ -43,7 +43,7 @@ namespace AutoExile.Systems
         private int _maxOrders = 3;
         private double _thresholdChaos = 50.0;
         private HashSet<string> _exclusions = new(StringComparer.OrdinalIgnoreCase);
-        private bool _scarabsOnly;
+        private SellItemFilter _itemFilter;
         private bool _havePicked;
         private bool _wantPicked;
         private bool _ownedFilter; // = finished typing the search filter for this candidate
@@ -101,7 +101,7 @@ namespace AutoExile.Systems
 
         /// <summary>Begin a sell run. Candidates are computed from the exchange once the panel opens.</summary>
         public void Start(int maxOrders, double thresholdChaos, HashSet<string> exclusions,
-            bool scarabsOnly = false)
+            SellItemFilter itemFilter = SellItemFilter.All)
         {
             _queue.Clear();
             _current = "";
@@ -109,7 +109,7 @@ namespace AutoExile.Systems
             _maxOrders = System.Math.Max(1, maxOrders);
             _thresholdChaos = thresholdChaos;
             _exclusions = exclusions ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            _scarabsOnly = scarabsOnly;
+            _itemFilter = itemFilter;
             _havePicked = false;
             _wantPicked = false;
             _log.Clear();
@@ -266,7 +266,7 @@ namespace AutoExile.Systems
                     // Price categories alone are insufficient here: a name can
                     // appear in another category's data. Restrict the picker
                     // entry itself to the game's scarab metadata path.
-                    if (_scarabsOnly)
+                    if (_itemFilter == SellItemFilter.Scarabs)
                     {
                         string metadata = null;
                         try { metadata = (string)opt.ItemType.Metadata; } catch { }
@@ -274,6 +274,10 @@ namespace AutoExile.Systems
                             !metadata.StartsWith("Metadata/Items/Scarabs/", StringComparison.OrdinalIgnoreCase))
                             continue;
                     }
+                    else if (_itemFilter == SellItemFilter.Essences &&
+                        !name.Contains("Essence", StringComparison.OrdinalIgnoreCase) &&
+                        !name.Contains("Remnant of", StringComparison.OrdinalIgnoreCase))
+                        continue;
                     int qty = ReadPickerQty((ExileCore.PoEMemory.Element)opt);
                     if (qty <= 0) continue;
                     double unit = UnitChaos(ctx, name);
@@ -1219,5 +1223,12 @@ namespace AutoExile.Systems
         LockingAmounts,
         PlacingOrder,
         ClearingBuilder,
+    }
+
+    public enum SellItemFilter
+    {
+        All,
+        Scarabs,
+        Essences,
     }
 }

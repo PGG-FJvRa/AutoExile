@@ -214,6 +214,9 @@ namespace AutoExile
             [Menu("Sell Scarabs Only", "When enabled, Sell mode lists only Scarab items already in inventory for Chaos on Faustus. It does not withdraw items from stash tabs.")]
             public ToggleNode SellScarabsOnly { get; set; } = new ToggleNode(false);
 
+            [Menu("Sell Essences Only", "When enabled, Sell mode lists only Essence and Remnant of Corruption items already in inventory for Chaos on Faustus. Turn off Sell Scarabs Only when using this.")]
+            public ToggleNode SellEssencesOnly { get; set; } = new ToggleNode(false);
+
             [Menu("Default Positioning", "How to position relative to monsters. Modes can override.")]
             public ListNode DefaultPositioning { get; set; } = new ListNode();
 
